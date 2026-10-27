@@ -1,0 +1,100 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  formatDate,
+  formatToPar,
+  getPlayer,
+  getPlayerResults,
+  getPlayerStats,
+  getPlayers,
+} from "@/lib/data";
+
+export function generateStaticParams() {
+  return getPlayers().map((p) => ({ id: p.id }));
+}
+
+export async function generateMetadata({
+  params,
+}: PageProps<"/players/[id]">): Promise<Metadata> {
+  const { id } = await params;
+  return { title: getPlayer(id)?.name ?? "Player not found" };
+}
+
+export default async function PlayerPage({ params }: PageProps<"/players/[id]">) {
+  const { id } = await params;
+  const player = getPlayer(id);
+  if (!player) notFound();
+
+  const stats = getPlayerStats(player.id);
+  const results = getPlayerResults(player.id);
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-1">
+        <Link href="/players" className="text-sm text-zinc-500 hover:underline">
+          ← All players
+        </Link>
+        <h1 className="text-3xl font-semibold tracking-tight">{player.name}</h1>
+        <p className="text-zinc-600 dark:text-zinc-400">
+          {player.division}
+          {player.pdgaNumber && <> · PDGA #{player.pdgaNumber}</>}
+          {" · "}Member since {formatDate(player.joined)}
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <Stat label="Rounds" value={stats.rounds} />
+        <Stat label="Wins" value={stats.wins} />
+        <Stat label="Podiums" value={stats.podiums} />
+        <Stat label="Avg to par" value={formatToPar(stats.avgToPar, 1)} />
+        <Stat label="Best round" value={formatToPar(stats.bestToPar)} />
+      </dl>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Results</h2>
+        {results.length === 0 ? (
+          <p className="text-zinc-500">No results yet.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 text-zinc-500 dark:border-zinc-800">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Event</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Div</th>
+                  <th className="px-4 py-3 text-right font-medium">Place</th>
+                  <th className="px-4 py-3 text-right font-medium">Score</th>
+                  <th className="px-4 py-3 text-right font-medium">To par</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+                {results.map((r) => (
+                  <tr key={r.eventId}>
+                    <td className="whitespace-nowrap px-4 py-3">{formatDate(r.event.date)}</td>
+                    <td className="px-4 py-3">{r.event.name}</td>
+                    <td className="px-4 py-3">{r.event.type}</td>
+                    <td className="px-4 py-3">{r.division}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{r.place}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{r.score}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{formatToPar(r.toPar)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <dt className="text-sm text-zinc-500">{label}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
