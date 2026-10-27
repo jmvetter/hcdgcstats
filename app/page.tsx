@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { events, formatDate, getPlayers } from "@/lib/data";
+import { getEvents, getPlayers } from "@/lib/data";
+import { formatDate } from "@/lib/format";
 
-export default function Home() {
-  const playerCount = getPlayers().length;
-  const latest = [...events].sort((a, b) => b.date.localeCompare(a.date))[0];
+export default async function Home() {
+  const [players, events] = await Promise.all([getPlayers(), getEvents()]);
+  const latest = events[0];
 
   return (
     <div className="flex flex-col gap-10">
@@ -15,7 +16,7 @@ export default function Home() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Players" value={playerCount} />
+        <StatCard label="Players" value={players.length} />
         <StatCard label="Events tracked" value={events.length} />
         <StatCard
           label="Latest event"

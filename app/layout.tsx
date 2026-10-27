@@ -39,6 +39,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             >
               Players
             </Link>
+            <Link
+              href="/admin"
+              className="ml-auto text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+            >
+              Admin
+            </Link>
           </nav>
         </header>
         <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
