@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { formatToPar } from "@/lib/format";
-import type { ImportRow } from "@/lib/udisc";
+import type { LayoutSummary } from "@/lib/data";
+import type { ImportRow } from "@/lib/importer";
 import {
   importPdgaTournamentAction,
   importUdiscAction,
@@ -48,7 +49,7 @@ const FIELD_LABELS = {
   toPar: "Relative score",
 } as const;
 
-export function UdiscImport() {
+export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
   const [preview, previewAction, previewing] = useActionState<PreviewState, FormData>(
     previewUdiscAction,
     {},
@@ -74,6 +75,7 @@ export function UdiscImport() {
           <div className="text-sm">
             <p className="font-medium">
               {preview.fileName}: {parsed.rows.length} players
+              {parsed.roundCount > 1 && `, ${parsed.roundCount} rounds`}
             </p>
             <p className="text-zinc-600 dark:text-zinc-400">
               Columns used:{" "}
@@ -101,16 +103,13 @@ export function UdiscImport() {
               <input type="date" name="date" required className={input} />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              Course
-              <input name="course" className={input} />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
               Type
               <select name="type" className={input}>
                 <option>League</option>
                 <option>Tournament</option>
               </select>
             </label>
+            <LayoutPicker layouts={layouts} parGuess={parGuess(parsed.rows)} />
             <button disabled={importing || parsed.rows.length === 0} className={`${button} justify-self-start`}>
               {importing ? "Importing…" : `Import ${parsed.rows.length} results`}
             </button>
@@ -157,12 +156,25 @@ export function PdgaTournamentImport() {
             <span className="font-medium">{t.name}</span>: {t.rows.length} players,{" "}
             {clubCount} club members
           </p>
+          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+            Layouts:{" "}
+            {t.layouts.length === 0
+              ? "none listed on PDGA"
+              : t.layouts
+                  .map((l) =>
+                    [`${l.course} – ${l.name}`, l.holes && `${l.holes} holes`, l.par && `par ${l.par}`, l.length && `${l.length.toLocaleString()} ${l.units?.toLowerCase() ?? ""}`.trim()]
+                      .filter(Boolean)
+                      .join(", "),
+                  )
+                  .join(" · ")}
+          </div>
 
           <ResultsPreview rows={t.rows} inClub={preview.inClub} />
 
           <form action={importAction} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="tournamentId" value={t.tournamentId} />
             <input type="hidden" name="rows" value={JSON.stringify(t.rows)} />
+            <input type="hidden" name="layouts" value={JSON.stringify(t.layouts)} />
             <label className="flex flex-col gap-1 text-sm">
               Event name
               <input name="name" required defaultValue={t.name} className={input} />
@@ -203,6 +215,7 @@ function ResultsPreview({ rows, inClub }: { rows: ImportRow[]; inClub?: boolean[
             <th className="px-3 py-2 font-medium">PDGA #</th>
             <th className="px-3 py-2 text-right font-medium">Score</th>
             <th className="px-3 py-2 text-right font-medium">To par</th>
+            <th className="px-3 py-2 text-right font-medium">Rounds</th>
             {inClub && <th className="px-3 py-2 font-medium">Member</th>}
           </tr>
         </thead>
@@ -215,6 +228,9 @@ function ResultsPreview({ rows, inClub }: { rows: ImportRow[]; inClub?: boolean[
               <td className="px-3 py-1.5 tabular-nums">{r.pdgaNumber ?? "—"}</td>
               <td className="px-3 py-1.5 text-right tabular-nums">{r.score ?? "—"}</td>
               <td className="px-3 py-1.5 text-right tabular-nums">{formatToPar(r.toPar)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">
+                {r.rounds.map((rd) => rd.score).join(", ") || "—"}
+              </td>
               {inClub && <td className="px-3 py-1.5">{inClub[i] ? "✓" : ""}</td>}
             </tr>
           ))}
@@ -230,7 +246,7 @@ function ImportResult({ state }: { state: ImportState }) {
   const { results, newPlayers, skipped } = state.summary;
   return (
     <p className="rounded-md bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
-      Imported {results} results
+      Imported {results} results ({state.summary.rounds} rounds)
       {newPlayers.length > 0 &&
         ` and added ${newPlayers.length} new players` +
           (newPlayers.length <= 10 ? ` (${newPlayers.join(", ")})` : "")}
@@ -259,5 +275,56 @@ export function PdgaRefresh() {
         </div>
       )}
     </form>
+  );
+}
+
+// Most common (score − relative score) across single rounds: the layout's par.
+function parGuess(rows: ImportRow[]): number | null {
+  const counts = new Map<number, number>();
+  for (const r of rows) {
+    for (const rd of r.rounds) {
+      if (rd.toPar !== null) counts.set(rd.score - rd.toPar, (counts.get(rd.score - rd.toPar) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+function LayoutPicker({ layouts, parGuess }: { layouts: LayoutSummary[]; parGuess: number | null }) {
+  const [choice, setChoice] = useState(layouts.length ? layouts[0].id : "new");
+  return (
+    <div className="flex flex-col gap-3 sm:col-span-2">
+      <label className="flex flex-col gap-1 text-sm">
+        Layout played
+        <select name="layoutId" value={choice} onChange={(e) => setChoice(e.target.value)} className={input}>
+          {layouts.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.course} – {l.name}
+              {l.par ? ` (par ${l.par}${l.holes ? `, ${l.holes} holes` : ""})` : ""}
+            </option>
+          ))}
+          <option value="new">New layout…</option>
+        </select>
+      </label>
+      {choice === "new" && (
+        <div className="grid gap-3 sm:grid-cols-4">
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            Course
+            <input name="layoutCourse" required className={input} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            Layout name
+            <input name="layoutName" required placeholder="Blue tees" className={input} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Holes
+            <input name="layoutHoles" inputMode="numeric" defaultValue="18" className={input} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Par
+            <input name="layoutPar" inputMode="numeric" defaultValue={parGuess ?? ""} className={input} />
+          </label>
+        </div>
+      )}
+    </div>
   );
 }

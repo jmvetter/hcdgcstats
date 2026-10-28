@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { logIn, logOut, requireAdmin } from "@/lib/auth";
 import type { EventType } from "@/lib/data";
-import { matchMembers, saveEventImport, type ImportSummary } from "@/lib/importer";
+import { matchMembers, saveEventImport, type ImportRow, type ImportSummary } from "@/lib/importer";
+import { createLayout, findLayout, type LayoutInput } from "@/lib/layouts";
 import { addMember, deletePlayer, updatePlayer } from "@/lib/members";
 import {
   lookupPdgaPlayer,
@@ -15,7 +16,7 @@ import {
   type RefreshSummary,
 } from "@/lib/pdga";
 import { fetchTournament, parseTournamentId, type PdgaTournament } from "@/lib/pdga-live";
-import { parseUdiscExport, type ImportRow, type ParsedExport } from "@/lib/udisc";
+import { parseUdiscExport, type ParsedExport } from "@/lib/udisc";
 
 export type LoginState = { error?: string };
 
@@ -46,22 +47,55 @@ export async function previewUdiscAction(_prev: PreviewState, formData: FormData
 
 export type ImportState = { summary?: ImportSummary; error?: string };
 
+// Parses the rows a preview put in a hidden field.
+function readRows(formData: FormData): ImportRow[] | null {
+  try {
+    const rows = JSON.parse(String(formData.get("rows") ?? "[]"));
+    if (!Array.isArray(rows) || rows.some((r) => typeof r?.name !== "string" || !Array.isArray(r?.rounds))) {
+      return null;
+    }
+    return rows;
+  } catch {
+    return null;
+  }
+}
+
+const optionalInt = (v: FormDataEntryValue | null) => {
+  const s = String(v ?? "").trim();
+  return /^\d+$/.test(s) ? Number(s) : null;
+};
+
 export async function importUdiscAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
   await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const date = String(formData.get("date") ?? "");
-  const course = String(formData.get("course") ?? "").trim() || null;
   const type = formData.get("type") === "Tournament" ? "Tournament" : ("League" as EventType);
   if (!name) return { error: "Event name is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Event date is required." };
 
-  let rows: ImportRow[];
-  try {
-    rows = JSON.parse(String(formData.get("rows") ?? "[]"));
-    if (!Array.isArray(rows) || rows.some((r) => typeof r?.name !== "string")) throw new Error();
-  } catch {
-    return { error: "The preview data was invalid. Upload the file again." };
+  const rows = readRows(formData);
+  if (!rows) return { error: "The preview data was invalid. Upload the file again." };
+
+  // Every round in a UDisc import was played on the layout chosen on the form.
+  let layoutId = String(formData.get("layoutId") ?? "");
+  let course: string | null = null;
+  if (layoutId === "new") {
+    const layoutCourse = String(formData.get("layoutCourse") ?? "").trim();
+    const layoutName = String(formData.get("layoutName") ?? "").trim();
+    if (!layoutCourse || !layoutName) return { error: "Enter the new layout's course and name." };
+    layoutId = createLayout({
+      course: layoutCourse,
+      name: layoutName,
+      holes: optionalInt(formData.get("layoutHoles")),
+      par: optionalInt(formData.get("layoutPar")),
+    });
+    course = layoutCourse;
+  } else {
+    const layout = findLayout(layoutId);
+    if (!layout) return { error: "Choose the layout this event was played on." };
+    course = layout.course;
   }
+  for (const row of rows) for (const r of row.rounds) r.layoutId = layoutId;
 
   const summary = saveEventImport({ name, date, course, type }, rows, { markMembers: true });
   revalidatePath("/", "layout");
@@ -102,18 +136,21 @@ export async function importPdgaTournamentAction(
   if (!name) return { error: "Event name is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Event date is required." };
 
-  let rows: ImportRow[];
+  const rows = readRows(formData);
+  let layouts: LayoutInput[];
   try {
-    rows = JSON.parse(String(formData.get("rows") ?? "[]"));
-    if (!Array.isArray(rows) || rows.some((r) => typeof r?.name !== "string")) throw new Error();
+    layouts = JSON.parse(String(formData.get("layouts") ?? "[]"));
+    if (!Array.isArray(layouts)) throw new Error();
   } catch {
-    return { error: "The preview data was invalid. Load the tournament again." };
+    layouts = [];
   }
+  if (!rows) return { error: "The preview data was invalid. Load the tournament again." };
 
   const summary = saveEventImport(
     { id: `pdga-${tournamentId}`, source: "pdga", name, date, course, type: "Tournament" },
     rows,
     { membersOnly: formData.get("membersOnly") === "on", markMembers: false },
+    layouts,
   );
   revalidatePath("/", "layout");
   return { summary };

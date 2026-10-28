@@ -1,7 +1,28 @@
 import "server-only";
 import { db, slugify, transaction } from "./db";
 import type { EventType } from "./data";
-import type { ImportRow } from "./udisc";
+import { upsertLayout, type LayoutInput } from "./layouts";
+
+// One player's round, on the layout they played.
+export type RoundInput = {
+  round: number;
+  layoutId: string | null; // our layouts.id
+  score: number;
+  toPar: number | null;
+  rating: number | null; // PDGA round rating
+  holeScores: number[] | null;
+};
+
+// One player's result in an event, as read from an import source.
+export type ImportRow = {
+  name: string;
+  division: string | null;
+  place: number | null;
+  pdgaNumber: number | null;
+  score: number | null;
+  toPar: number | null;
+  rounds: RoundInput[];
+};
 
 export type EventInput = {
   name: string;
@@ -25,6 +46,7 @@ export type ImportOptions = {
 export type ImportSummary = {
   eventId: string;
   results: number;
+  rounds: number;
   newPlayers: string[];
   skipped: number;
 };
@@ -32,7 +54,7 @@ export type ImportSummary = {
 type FoundPlayer = { id: string; pdga_number: number | null; member: number };
 
 // Finds a player by PDGA number first, then by exact name.
-function findPlayer(row: ImportRow): FoundPlayer | undefined {
+function findPlayer(row: Pick<ImportRow, "name" | "pdgaNumber">): FoundPlayer | undefined {
   if (row.pdgaNumber !== null) {
     const byPdga = db
       .prepare("SELECT id, pdga_number, member FROM players WHERE pdga_number = ?")
@@ -49,12 +71,14 @@ export function matchMembers(rows: ImportRow[]): boolean[] {
   return rows.map((r) => findPlayer(r)?.member === 1);
 }
 
-// Writes one event and its results. Re-importing the same event replaces its
-// results, so an import can be safely repeated or corrected.
+// Writes one event, its layouts, and each player's result and rounds.
+// Re-importing the same event replaces its results and rounds, so an import can
+// be safely repeated or corrected.
 export function saveEventImport(
   event: EventInput,
   rows: ImportRow[],
   options: ImportOptions = {},
+  layouts: LayoutInput[] = [],
 ): ImportSummary {
   const eventId = event.id ?? slugify(`${event.date} ${event.name}`);
   const par = mostCommon(
@@ -74,8 +98,17 @@ export function saveEventImport(
        division = excluded.division, place = excluded.place,
        score = excluded.score, to_par = excluded.to_par`,
   );
+  const insertRound = db.prepare(
+    `INSERT INTO rounds (player_id, event_id, round, layout_id, score, to_par, rating, hole_scores)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (player_id, event_id, round) DO UPDATE SET
+       layout_id = excluded.layout_id, score = excluded.score, to_par = excluded.to_par,
+       rating = excluded.rating, hole_scores = excluded.hole_scores`,
+  );
 
   return transaction(() => {
+    for (const layout of layouts) upsertLayout(layout);
+
     db.prepare(
       `INSERT INTO events (id, name, date, course, type, par, source, imported_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -93,9 +126,11 @@ export function saveEventImport(
       new Date().toISOString(),
     );
     db.prepare("DELETE FROM results WHERE event_id = ?").run(eventId);
+    db.prepare("DELETE FROM rounds WHERE event_id = ?").run(eventId);
 
     const newPlayers: string[] = [];
     let saved = 0;
+    let roundCount = 0;
     for (const row of rows) {
       const existing = findPlayer(row);
       if (options.membersOnly && existing?.member !== 1) continue;
@@ -119,9 +154,22 @@ export function saveEventImport(
         newPlayers.push(row.name);
       }
       insertResult.run(playerId, eventId, row.division, row.place, row.score, row.toPar);
+      for (const r of row.rounds) {
+        insertRound.run(
+          playerId,
+          eventId,
+          r.round,
+          r.layoutId,
+          r.score,
+          r.toPar,
+          r.rating,
+          r.holeScores ? JSON.stringify(r.holeScores) : null,
+        );
+        roundCount++;
+      }
       saved++;
     }
-    return { eventId, results: saved, newPlayers, skipped: rows.length - saved };
+    return { eventId, results: saved, rounds: roundCount, newPlayers, skipped: rows.length - saved };
   });
 }
 

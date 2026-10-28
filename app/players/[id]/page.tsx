@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { computeStats, getPlayer, getPlayerResults } from "@/lib/data";
+import { computeStats, getPlayer, getPlayerLayouts, getPlayerResults } from "@/lib/data";
 import { formatDate, formatToPar } from "@/lib/format";
 
 export async function generateMetadata({
@@ -16,7 +16,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const results = await getPlayerResults(player.id);
+  const [results, layouts] = await Promise.all([getPlayerResults(player.id), getPlayerLayouts(player.id)]);
   const stats = computeStats(results);
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
 
@@ -51,6 +51,42 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
         <Stat label="Avg to par" value={formatToPar(stats.avgToPar, 1)} />
         <Stat label="Best result" value={formatToPar(stats.bestToPar)} />
       </dl>
+
+      {layouts.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Layouts</h2>
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 text-zinc-500 dark:border-zinc-800">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Layout</th>
+                  <th className="px-4 py-3 text-right font-medium">Rounds</th>
+                  <th className="px-4 py-3 text-right font-medium">Avg score</th>
+                  <th className="px-4 py-3 text-right font-medium">Best</th>
+                  <th className="px-4 py-3 text-right font-medium">Club rank</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+                {layouts.map((l) => (
+                  <tr key={l.layout.id}>
+                    <td className="px-4 py-3">
+                      <Link href={`/layouts/${l.layout.id}`} className="font-medium hover:underline">
+                        {l.layout.course} – {l.layout.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{l.rounds}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{l.avgScore.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{l.best}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {l.clubRank ? `${l.clubRank} of ${l.clubPlayers}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Results</h2>

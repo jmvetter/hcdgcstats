@@ -40,6 +40,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               Players
             </Link>
             <Link
+              href="/layouts"
+              className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+            >
+              Layouts
+            </Link>
+            <Link
               href="/admin"
               className="ml-auto text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >

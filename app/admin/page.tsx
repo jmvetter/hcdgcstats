@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { adminConfigured, isAdmin } from "@/lib/auth";
-import { getPlayers } from "@/lib/data";
+import { getLayouts, getPlayers } from "@/lib/data";
 import { pdgaConfigured } from "@/lib/pdga";
 import { logoutAction } from "./actions";
 import { LoginForm, PdgaRefresh, PdgaTournamentImport, UdiscImport } from "./forms";
@@ -33,7 +33,7 @@ export default async function AdminPage() {
     );
   }
 
-  const players = await getPlayers();
+  const [players, layouts] = await Promise.all([getPlayers(), getLayouts()]);
 
   return (
     <div className="flex flex-col gap-10">
@@ -58,9 +58,9 @@ export default async function AdminPage() {
 
       <Section
         title="UDisc results"
-        description="In UDisc, open the event and go to Event tools → Leaderboard → Actions → Export. Upload that file here (XLSX or CSV). You'll see a preview before anything is saved. Importing the same event again replaces its results."
+        description="In UDisc, open the event and go to Event tools → Leaderboard → Actions → Export. Upload that file here (XLSX or CSV) and pick the layout that was played. You'll see a preview before anything is saved. Importing the same event again replaces its results."
       >
-        <UdiscImport />
+        <UdiscImport layouts={layouts} />
       </Section>
 
       <Section

@@ -1,27 +1,25 @@
 import "server-only";
 import ExcelJS from "exceljs";
+import type { ImportRow, RoundInput } from "./importer";
 
 // Parses the leaderboard export from UDisc (Event tools → Leaderboard → Actions → Export).
 // UDisc has changed the file's format and column order before, so columns are found
 // by header name rather than position, and the import page shows a preview first.
 
-export type ImportRow = {
-  name: string;
-  division: string | null;
-  place: number | null;
-  pdgaNumber: number | null;
-  score: number | null;
-  toPar: number | null;
-};
-
-export type ImportField = keyof ImportRow;
+export type ImportField = Exclude<keyof ImportRow, "rounds">;
 
 export type ParsedExport = {
   headers: string[];
   mapping: Record<ImportField, string | null>;
+  roundCount: number; // rounds found in per-round columns (1 if the file only has totals)
   rows: ImportRow[];
   warnings: string[];
 };
+
+// Per-round columns, e.g. "Round 1 Total Score", "Round 2 Relative Score", "Round 1 Rating".
+const ROUND_SCORE = /^(?:round|rd)(\d+)(?:total)?score$/;
+const ROUND_RELATIVE = /^(?:round|rd)(\d+)(?:total)?relative(?:score)?$/;
+const ROUND_RATING = /^(?:round|rd)(\d+)(?:round)?rating$/;
 
 // Candidate header names per field, best match first, compared after normalizing
 // to lowercase letters and digits only.
@@ -75,6 +73,20 @@ export function parseGrid(grid: string[][]): ParsedExport {
     warnings.push("No position column found; places will be left blank.");
   }
 
+  // Map round number → column indexes, for exports that list each round.
+  const roundCols = new Map<number, { score?: number; relative?: number; rating?: number }>();
+  normalized.forEach((h, i) => {
+    for (const [re, key] of [
+      [ROUND_SCORE, "score"],
+      [ROUND_RELATIVE, "relative"],
+      [ROUND_RATING, "rating"],
+    ] as const) {
+      const m = h.match(re);
+      if (m) roundCols.set(Number(m[1]), { ...roundCols.get(Number(m[1])), [key]: i });
+    }
+  });
+  const roundNumbers = [...roundCols.keys()].filter((n) => roundCols.get(n)!.score !== undefined).sort((a, b) => a - b);
+
   const cell = (row: string[], field: ImportField) =>
     colIndex[field] === -1 ? "" : (row[colIndex[field]] ?? "").trim();
 
@@ -89,18 +101,42 @@ export function parseGrid(grid: string[][]): ParsedExport {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const score = parseIntLoose(cell(row, "score"));
+    const toPar = parseToPar(cell(row, "toPar"));
+    // The layout is chosen on the import form and filled in when saving.
+    let rounds: RoundInput[];
+    if (roundNumbers.length > 0) {
+      rounds = roundNumbers.flatMap((n) => {
+        const c = roundCols.get(n)!;
+        const at = (i: number | undefined) => (i === undefined ? "" : (row[i] ?? "").trim());
+        const roundScore = parseIntLoose(at(c.score));
+        if (roundScore === null) return [];
+        return [{
+          round: n,
+          layoutId: null,
+          score: roundScore,
+          toPar: parseToPar(at(c.relative)),
+          rating: parseIntLoose(at(c.rating)),
+          holeScores: null,
+        }];
+      });
+    } else {
+      rounds = score === null ? [] : [{ round: 1, layoutId: null, score, toPar, rating: null, holeScores: null }];
+    }
+
     rows.push({
       name,
       division,
       place: parseIntLoose(cell(row, "place")),
       pdgaNumber: parseIntLoose(cell(row, "pdgaNumber")),
-      score: parseIntLoose(cell(row, "score")),
-      toPar: parseToPar(cell(row, "toPar")),
+      score,
+      toPar,
+      rounds,
     });
   }
   if (rows.length === 0) warnings.push("No player rows found below the header.");
 
-  return { headers, mapping, rows, warnings };
+  return { headers, mapping, roundCount: Math.max(1, roundNumbers.length), rows, warnings };
 }
 
 // "T3" → 3, "12" → 12, "DNF" → null

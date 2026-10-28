@@ -58,6 +58,7 @@ export function updatePlayer(id: string, input: MemberInput & { member: boolean 
 export function deletePlayer(id: string) {
   transaction(() => {
     db.prepare("DELETE FROM results WHERE player_id = ?").run(id);
+    db.prepare("DELETE FROM rounds WHERE player_id = ?").run(id);
     db.prepare("DELETE FROM players WHERE id = ?").run(id);
   });
 }

@@ -150,3 +150,163 @@ export function computeStats(rs: PlayerResult[]): PlayerStats {
 export async function getPlayerStats(playerId: string): Promise<PlayerStats> {
   return computeStats(await getPlayerResults(playerId));
 }
+
+export type Layout = {
+  id: string;
+  pdgaLayoutId: number | null;
+  course: string;
+  name: string;
+  holes: number | null;
+  par: number | null;
+  length: number | null;
+  units: string | null;
+  holeDetails: { label: string; par: number | null; length: number | null }[] | null;
+};
+
+export type LayoutSummary = Layout & { rounds: number; players: number; members: number };
+
+type LayoutRow = {
+  id: string;
+  pdga_layout_id: number | null;
+  course: string;
+  name: string;
+  holes: number | null;
+  par: number | null;
+  length: number | null;
+  units: string | null;
+  hole_details: string | null;
+};
+
+function toLayout(r: LayoutRow): Layout {
+  return {
+    id: r.id,
+    pdgaLayoutId: r.pdga_layout_id,
+    course: r.course,
+    name: r.name,
+    holes: r.holes,
+    par: r.par,
+    length: r.length,
+    units: r.units,
+    holeDetails: r.hole_details ? JSON.parse(r.hole_details) : null,
+  };
+}
+
+export async function getLayouts(): Promise<LayoutSummary[]> {
+  await connection();
+  const rows = db
+    .prepare(
+      `SELECT l.*, COUNT(r.score) AS rounds, COUNT(DISTINCT r.player_id) AS players,
+              COUNT(DISTINCT CASE WHEN p.member = 1 THEN r.player_id END) AS members
+       FROM layouts l
+       LEFT JOIN rounds r ON r.layout_id = l.id
+       LEFT JOIN players p ON p.id = r.player_id
+       GROUP BY l.id
+       ORDER BY l.course COLLATE NOCASE, l.name COLLATE NOCASE`,
+    )
+    .all() as (LayoutRow & { rounds: number; players: number; members: number })[];
+  return rows.map((r) => ({ ...toLayout(r), rounds: r.rounds, players: r.players, members: r.members }));
+}
+
+export async function getLayout(id: string): Promise<Layout | undefined> {
+  await connection();
+  const row = db.prepare("SELECT * FROM layouts WHERE id = ?").get(id);
+  return row ? toLayout(row as LayoutRow) : undefined;
+}
+
+export type LayoutStanding = {
+  rank: number;
+  playerId: string;
+  name: string;
+  member: boolean;
+  rounds: number;
+  avgScore: number;
+  avgToPar: number | null;
+  best: number;
+};
+
+// Players ranked by average score on one layout (lower is better; ties broken
+// by best round). Only rounds on this exact layout count, so scores compare fairly.
+export async function getLayoutLeaderboard(
+  layoutId: string,
+  { membersOnly = false, minRounds = 1 } = {},
+): Promise<LayoutStanding[]> {
+  await connection();
+  return layoutLeaderboard(layoutId, membersOnly, minRounds);
+}
+
+function layoutLeaderboard(layoutId: string, membersOnly: boolean, minRounds: number): LayoutStanding[] {
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.name, p.member, COUNT(*) AS rounds, AVG(r.score) AS avg_score,
+              AVG(r.to_par) AS avg_to_par, MIN(r.score) AS best
+       FROM rounds r JOIN players p ON p.id = r.player_id
+       WHERE r.layout_id = ? ${membersOnly ? "AND p.member = 1" : ""}
+       GROUP BY p.id
+       HAVING COUNT(*) >= ?
+       ORDER BY avg_score, best, p.name COLLATE NOCASE`,
+    )
+    .all(layoutId, minRounds) as {
+    id: string;
+    name: string;
+    member: number;
+    rounds: number;
+    avg_score: number;
+    avg_to_par: number | null;
+    best: number;
+  }[];
+
+  // Standard competition ranking (1, 2, 2, 4): players share a rank only when
+  // both their average and their best round are equal.
+  let rank = 0;
+  return rows.map((r, i) => {
+    const prev = rows[i - 1];
+    if (i === 0 || r.avg_score !== prev.avg_score || r.best !== prev.best) rank = i + 1;
+    return {
+      rank,
+      playerId: r.id,
+      name: r.name,
+      member: r.member === 1,
+      rounds: r.rounds,
+      avgScore: r.avg_score,
+      avgToPar: r.avg_to_par,
+      best: r.best,
+    };
+  });
+}
+
+export type PlayerLayoutStanding = {
+  layout: Layout;
+  rounds: number;
+  avgScore: number;
+  best: number;
+  clubRank: number | null; // among club members on this layout; null for non-members
+  clubPlayers: number;
+};
+
+// A player's average and best on each layout they've played, with their rank
+// among club members there.
+export async function getPlayerLayouts(playerId: string): Promise<PlayerLayoutStanding[]> {
+  await connection();
+  const layoutIds = db
+    .prepare("SELECT DISTINCT layout_id FROM rounds WHERE player_id = ? AND layout_id IS NOT NULL")
+    .all(playerId) as { layout_id: string }[];
+
+  const out: PlayerLayoutStanding[] = [];
+  for (const { layout_id } of layoutIds) {
+    const layout = db.prepare("SELECT * FROM layouts WHERE id = ?").get(layout_id) as LayoutRow | undefined;
+    if (!layout) continue;
+    const all = layoutLeaderboard(layout_id, false, 1);
+    const mine = all.find((s) => s.playerId === playerId);
+    if (!mine) continue;
+    const club = layoutLeaderboard(layout_id, true, 1);
+    out.push({
+      layout: toLayout(layout),
+      rounds: mine.rounds,
+      avgScore: mine.avgScore,
+      best: mine.best,
+      clubRank: club.find((s) => s.playerId === playerId)?.rank ?? null,
+      clubPlayers: club.length,
+    });
+  }
+  return out.sort((a, b) => b.rounds - a.rounds);
+}
