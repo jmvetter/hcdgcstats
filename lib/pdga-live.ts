@@ -200,7 +200,9 @@ export async function fetchTournament(tournamentId: number): Promise<PdgaTournam
         rows.set(key, row);
       }
       const r = toRound(round, event.RoundsList?.[round]?.Date?.slice(0, 10) ?? null, s);
-      if (r) row.rounds.push(r);
+      // PDGA occasionally lists the same player twice in a round; keep one, or the
+      // duplicate would also push others down when weekly places are ranked.
+      if (r && !row.rounds.some((x) => x.round === r.round)) row.rounds.push(r);
     }
   }
   const divisionOrder = event.Divisions.map((d) => d.Division);
