@@ -105,8 +105,8 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
             <label className="flex flex-col gap-1 text-sm">
               Type
               <select name="type" className={input}>
-                <option>League</option>
-                <option>Tournament</option>
+                <option value="League">League (each round counts as a finish)</option>
+                <option value="Tournament">Tournament (final place counts)</option>
               </select>
             </label>
             <LayoutPicker layouts={layouts} parGuess={parGuess(parsed.rows)} />
@@ -186,6 +186,13 @@ export function PdgaTournamentImport() {
             <label className="flex flex-col gap-1 text-sm">
               Course
               <input name="course" defaultValue={t.course ?? ""} className={input} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              Type
+              <select name="type" defaultValue={t.type} className={input}>
+                <option value="Tournament">Tournament (final place counts)</option>
+                <option value="League">League (each round counts as a finish)</option>
+              </select>
             </label>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
               <input type="checkbox" name="membersOnly" defaultChecked={clubCount > 0} />

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { logIn, logOut, requireAdmin } from "@/lib/auth";
 import type { EventType } from "@/lib/data";
 import { matchMembers, saveEventImport, type ImportRow, type ImportSummary } from "@/lib/importer";
+import { setEventType } from "@/lib/events";
 import { createLayout, findLayout, type LayoutInput } from "@/lib/layouts";
 import { addMember, deletePlayer, updatePlayer } from "@/lib/members";
 import {
@@ -147,7 +148,14 @@ export async function importPdgaTournamentAction(
   if (!rows) return { error: "The preview data was invalid. Load the tournament again." };
 
   const summary = saveEventImport(
-    { id: `pdga-${tournamentId}`, source: "pdga", name, date, course, type: "Tournament" },
+    {
+      id: `pdga-${tournamentId}`,
+      source: "pdga",
+      name,
+      date,
+      course,
+      type: formData.get("type") === "League" ? "League" : "Tournament",
+    },
     rows,
     { membersOnly: formData.get("membersOnly") === "on", markMembers: false },
     layouts,
@@ -238,5 +246,13 @@ export async function deletePlayerAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (id) deletePlayer(id);
+  revalidatePath("/", "layout");
+}
+
+export async function setEventTypeAction(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const type = formData.get("type") === "League" ? "League" : "Tournament";
+  if (id) setEventType(id, type);
   revalidatePath("/", "layout");
 }

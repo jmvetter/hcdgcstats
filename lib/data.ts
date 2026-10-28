@@ -32,21 +32,25 @@ export type ClubEvent = {
   par: number | null;
 };
 
-export type PlayerResult = {
+// One finish: a tournament's final result, or one round (week) of a league.
+export type Finish = {
   eventId: string;
+  event: ClubEvent;
+  round: number | null; // league round; null for a tournament's final result
+  date: string; // the round's date when known, else the event's
   division: string | null;
   place: number | null;
   score: number | null;
   toPar: number | null;
-  event: ClubEvent;
 };
 
 export type PlayerStats = {
-  events: number;
+  finishes: number;
   wins: number;
   podiums: number;
-  avgToPar: number | null;
-  bestToPar: number | null;
+  avgPlace: number | null; // over finishes with a place
+  avgRating: number | null; // average PDGA round rating
+  ratedRounds: number;
 };
 
 type PlayerRow = {
@@ -99,56 +103,138 @@ export async function getPlayer(id: string): Promise<Player | undefined> {
 
 export async function getEvents(): Promise<ClubEvent[]> {
   await connection();
-  return db
+  const rows = db
     .prepare("SELECT id, name, date, course, type, par FROM events ORDER BY date DESC")
     .all() as ClubEvent[];
+  // SQLite rows have a null prototype, which can't be passed to client components.
+  return rows.map((r) => ({ ...r }));
 }
 
-export async function getPlayerResults(playerId: string): Promise<PlayerResult[]> {
+const typeFilter = (type?: EventType) => (type ? "AND e.type = ?" : "");
+const typeArgs = (type?: EventType) => (type ? [type] : []);
+
+type EventCols = {
+  event_id: string;
+  name: string;
+  event_date: string;
+  course: string | null;
+  type: EventType;
+  par: number | null;
+};
+
+const toEvent = (r: EventCols): ClubEvent => ({
+  id: r.event_id,
+  name: r.name,
+  date: r.event_date,
+  course: r.course,
+  type: r.type,
+  par: r.par,
+});
+
+// A player's finishes, newest first. Leagues count each round as a finish,
+// placed within that round's division; tournaments count their final place.
+// League events imported before round places were stored fall back to the
+// overall result.
+export async function getPlayerFinishes(playerId: string, type?: EventType): Promise<Finish[]> {
   await connection();
-  const rows = db
+  const eventResults = db
     .prepare(
       `SELECT r.event_id, r.division, r.place, r.score, r.to_par,
-              e.name, e.date, e.course, e.type, e.par
+              e.name, e.date AS event_date, e.course, e.type, e.par
        FROM results r JOIN events e ON e.id = r.event_id
-       WHERE r.player_id = ?
-       ORDER BY e.date DESC`,
+       WHERE r.player_id = ? ${typeFilter(type)}
+         AND (e.type = 'Tournament' OR NOT EXISTS (
+           SELECT 1 FROM rounds rd
+           WHERE rd.player_id = r.player_id AND rd.event_id = r.event_id AND rd.place IS NOT NULL))`,
     )
-    .all(playerId) as {
-    event_id: string;
+    .all(playerId, ...typeArgs(type)) as (EventCols & {
     division: string | null;
     place: number | null;
     score: number | null;
     to_par: number | null;
-    name: string;
-    date: string;
-    course: string | null;
-    type: EventType;
-    par: number | null;
-  }[];
-  return rows.map((r) => ({
-    eventId: r.event_id,
-    division: r.division,
-    place: r.place,
-    score: r.score,
-    toPar: r.to_par,
-    event: { id: r.event_id, name: r.name, date: r.date, course: r.course, type: r.type, par: r.par },
-  }));
+  })[];
+
+  const leagueRounds = db
+    .prepare(
+      `SELECT rd.event_id, rd.round, rd.place, rd.score, rd.to_par, rd.date, res.division,
+              e.name, e.date AS event_date, e.course, e.type, e.par
+       FROM rounds rd
+       JOIN events e ON e.id = rd.event_id
+       LEFT JOIN results res ON res.player_id = rd.player_id AND res.event_id = rd.event_id
+       WHERE rd.player_id = ? AND e.type = 'League' AND rd.place IS NOT NULL ${typeFilter(type)}`,
+    )
+    .all(playerId, ...typeArgs(type)) as (EventCols & {
+    round: number;
+    place: number;
+    score: number;
+    to_par: number | null;
+    date: string | null;
+    division: string | null;
+  })[];
+
+  const finishes: Finish[] = [
+    ...eventResults.map((r) => ({
+      eventId: r.event_id,
+      event: toEvent(r),
+      round: null,
+      date: r.event_date,
+      division: r.division,
+      place: r.place,
+      score: r.score,
+      toPar: r.to_par,
+    })),
+    ...leagueRounds.map((r) => ({
+      eventId: r.event_id,
+      event: toEvent(r),
+      round: r.round,
+      date: r.date ?? r.event_date,
+      division: r.division,
+      place: r.place,
+      score: r.score,
+      toPar: r.to_par,
+    })),
+  ];
+  return finishes.sort((a, b) => b.date.localeCompare(a.date) || (b.round ?? 0) - (a.round ?? 0));
 }
 
-export function computeStats(rs: PlayerResult[]): PlayerStats {
-  const toPars = rs.map((r) => r.toPar).filter((n): n is number => n !== null);
+const average = (nums: number[]) => (nums.length ? nums.reduce((sum, n) => sum + n, 0) / nums.length : null);
+
+export function computeStats(finishes: Finish[], roundRatings: number[]): PlayerStats {
+  const places = finishes.map((f) => f.place).filter((n): n is number => n !== null);
   return {
-    events: rs.length,
-    wins: rs.filter((r) => r.place === 1).length,
-    podiums: rs.filter((r) => r.place !== null && r.place <= 3).length,
-    avgToPar: toPars.length ? toPars.reduce((sum, n) => sum + n, 0) / toPars.length : null,
-    bestToPar: toPars.length ? Math.min(...toPars) : null,
+    finishes: finishes.length,
+    wins: places.filter((p) => p === 1).length,
+    podiums: places.filter((p) => p <= 3).length,
+    avgPlace: average(places),
+    avgRating: average(roundRatings),
+    ratedRounds: roundRatings.length,
   };
 }
 
-export async function getPlayerStats(playerId: string): Promise<PlayerStats> {
-  return computeStats(await getPlayerResults(playerId));
+// PDGA round ratings for every rated round the player has played. UDisc league
+// rounds usually have none.
+export async function getPlayerRoundRatings(playerId: string, type?: EventType): Promise<number[]> {
+  await connection();
+  const rows = db
+    .prepare(
+      `SELECT rd.rating FROM rounds rd JOIN events e ON e.id = rd.event_id
+       WHERE rd.player_id = ? AND rd.rating IS NOT NULL ${typeFilter(type)}`,
+    )
+    .all(playerId, ...typeArgs(type)) as { rating: number }[];
+  return rows.map((r) => r.rating);
+}
+
+export async function getPlayerStats(playerId: string, type?: EventType): Promise<PlayerStats> {
+  const [finishes, ratings] = await Promise.all([
+    getPlayerFinishes(playerId, type),
+    getPlayerRoundRatings(playerId, type),
+  ]);
+  return computeStats(finishes, ratings);
+}
+
+// Reads the ?type= filter shared by the players list and profiles.
+export function parseTypeFilter(value: string | string[] | undefined): EventType | undefined {
+  return value === "league" ? "League" : value === "tournament" ? "Tournament" : undefined;
 }
 
 export type Layout = {

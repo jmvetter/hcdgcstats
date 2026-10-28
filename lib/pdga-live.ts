@@ -1,4 +1,5 @@
 import "server-only";
+import type { EventType } from "./data";
 import type { ImportRow, RoundInput } from "./importer";
 import { pdgaLayoutKey, type LayoutInput } from "./layouts";
 
@@ -20,6 +21,8 @@ type LiveEvent = {
   EndDate: string;
   LocationShort?: string;
   Rounds: number;
+  RawTier?: string; // "L" for a league
+  RoundsList?: Record<string, { Number: number; Date?: string }>;
   Divisions: LiveDivision[];
 };
 
@@ -59,6 +62,7 @@ export type PdgaTournament = {
   name: string;
   date: string; // start date, YYYY-MM-DD
   course: string | null;
+  type: EventType;
   rows: ImportRow[];
   layouts: LayoutInput[];
 };
@@ -71,8 +75,19 @@ export function parseTournamentId(input: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  // PDGA rate-limits bursts (HTTP 429). A multi-week league can need dozens of
+  // round requests, so back off and retry rather than failing the import.
+  let res: Response;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (res.status !== 429 || attempt === 5) break;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    await sleep(retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt);
+  }
+  if (res.status === 429) throw new Error("PDGA is rate-limiting requests. Wait a minute and try again.");
   if (!res.ok) throw new Error(`PDGA returned HTTP ${res.status}.`);
   const body = (await res.json()) as { data?: T };
   if (!body.data) throw new Error("PDGA returned no data for this tournament.");
@@ -110,7 +125,7 @@ function toLayout(l: LiveLayout, fallbackCourse: string | null): LayoutInput {
   };
 }
 
-function toRound(round: number, s: LiveScore): RoundInput | null {
+function toRound(round: number, date: string | null, s: LiveScore): RoundInput | null {
   if (!s.RoundScore || s.RoundScore >= DNF_SCORE) return null;
   const holes = s.Holes ?? 18;
   const holeScores = (s.Scores ?? "")
@@ -124,6 +139,7 @@ function toRound(round: number, s: LiveScore): RoundInput | null {
     toPar: s.RoundtoPar,
     rating: s.RoundRating || null,
     holeScores: holeScores.every((n) => Number.isFinite(n)) ? holeScores : null,
+    date,
   };
 }
 
@@ -139,7 +155,7 @@ export async function fetchTournament(tournamentId: number): Promise<PdgaTournam
       round: i + 1,
     })),
   );
-  const responses = await mapLimit(requests, 6, async (req) => ({
+  const responses = await mapLimit(requests, 3, async (req) => ({
     ...req,
     data: await getJson<LiveRound>(
       `${LIVE}/live_results_fetch_round?TournID=${tournamentId}&Division=${encodeURIComponent(req.division)}&Round=${req.round}`,
@@ -183,7 +199,7 @@ export async function fetchTournament(tournamentId: number): Promise<PdgaTournam
         };
         rows.set(key, row);
       }
-      const r = toRound(round, s);
+      const r = toRound(round, event.RoundsList?.[round]?.Date?.slice(0, 10) ?? null, s);
       if (r) row.rounds.push(r);
     }
   }
@@ -198,6 +214,8 @@ export async function fetchTournament(tournamentId: number): Promise<PdgaTournam
   const firstLayout = layouts.values().next().value;
   return {
     tournamentId,
+    // PDGA leagues (tier "L") run one round per week, so each round is a finish.
+    type: event.RawTier === "L" ? "League" : "Tournament",
     name: event.SimpleName || event.Name,
     date: event.StartDate.slice(0, 10),
     course: firstLayout?.course ?? event.LocationShort ?? null,

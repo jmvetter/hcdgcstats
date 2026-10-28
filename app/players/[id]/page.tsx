@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { computeStats, getPlayer, getPlayerLayouts, getPlayerResults } from "@/lib/data";
+import { TypeFilter } from "@/app/components/type-filter";
+import {
+  computeStats,
+  getPlayer,
+  getPlayerFinishes,
+  getPlayerLayouts,
+  getPlayerRoundRatings,
+  parseTypeFilter,
+} from "@/lib/data";
 import { formatDate, formatToPar } from "@/lib/format";
 
 export async function generateMetadata({
@@ -11,13 +19,18 @@ export async function generateMetadata({
   return { title: (await getPlayer(id))?.name ?? "Player not found" };
 }
 
-export default async function PlayerPage({ params }: PageProps<"/players/[id]">) {
+export default async function PlayerPage({ params, searchParams }: PageProps<"/players/[id]">) {
   const { id } = await params;
+  const type = parseTypeFilter((await searchParams).type);
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const [results, layouts] = await Promise.all([getPlayerResults(player.id), getPlayerLayouts(player.id)]);
-  const stats = computeStats(results);
+  const [finishes, layouts, ratings] = await Promise.all([
+    getPlayerFinishes(player.id, type),
+    getPlayerLayouts(player.id),
+    getPlayerRoundRatings(player.id, type),
+  ]);
+  const stats = computeStats(finishes, ratings);
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
 
   return (
@@ -39,17 +52,31 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-zinc-500">
+          Each league round (week) counts as a finish; tournaments count their final place.
+        </p>
+        <TypeFilter
+          type={type}
+          href={(t) => `/players/${player.id}${t ? `?type=${t.toLowerCase()}` : ""}`}
+        />
+      </div>
+
+      <dl className="-mt-4 grid grid-cols-2 gap-4 sm:grid-cols-6">
         <Stat
           label="PDGA rating"
           value={player.rating ?? "—"}
           sub={player.ratingDate ? `as of ${formatDate(player.ratingDate)}` : undefined}
         />
-        <Stat label="Events" value={stats.events} />
+        <Stat label="Finishes" value={stats.finishes} />
         <Stat label="Wins" value={stats.wins} />
         <Stat label="Podiums" value={stats.podiums} />
-        <Stat label="Avg to par" value={formatToPar(stats.avgToPar, 1)} />
-        <Stat label="Best result" value={formatToPar(stats.bestToPar)} />
+        <Stat label="Avg place" value={stats.avgPlace?.toFixed(1) ?? "—"} />
+        <Stat
+          label="Avg round rating"
+          value={stats.avgRating !== null ? Math.round(stats.avgRating) : "—"}
+          sub={stats.ratedRounds ? `${stats.ratedRounds} rated rounds` : undefined}
+        />
       </dl>
 
       {layouts.length > 0 && (
@@ -89,9 +116,9 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Results</h2>
-        {results.length === 0 ? (
-          <p className="text-zinc-500">No results yet.</p>
+        <h2 className="text-lg font-semibold">Finishes</h2>
+        {finishes.length === 0 ? (
+          <p className="text-zinc-500">No {type ? `${type.toLowerCase()} ` : ""}finishes yet.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
             <table className="w-full text-left text-sm">
@@ -107,10 +134,13 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-                {results.map((r) => (
-                  <tr key={r.eventId}>
-                    <td className="whitespace-nowrap px-4 py-3">{formatDate(r.event.date)}</td>
-                    <td className="px-4 py-3">{r.event.name}</td>
+                {finishes.map((r) => (
+                  <tr key={`${r.eventId}|${r.round ?? "final"}`}>
+                    <td className="whitespace-nowrap px-4 py-3">{formatDate(r.date)}</td>
+                    <td className="px-4 py-3">
+                      {r.event.name}
+                      {r.round !== null && <span className="text-zinc-500"> · Week {r.round}</span>}
+                    </td>
                     <td className="px-4 py-3">{r.event.type}</td>
                     <td className="px-4 py-3">{r.division ?? "—"}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{r.place ?? "—"}</td>

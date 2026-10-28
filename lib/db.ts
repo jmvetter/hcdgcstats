@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS layouts (
   length INTEGER,
   units TEXT,
   hole_details TEXT -- JSON: [{ "label": "1", "par": 3, "length": 357 }, ...]
+  -- "source_name" (the name as imported, before merging renames it) is added by migrate()
 );
 
 -- One player's score for one round of an event, on the layout they played.
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS rounds (
   to_par INTEGER,
   rating INTEGER, -- PDGA round rating, when the round has one
   hole_scores TEXT, -- JSON array of strokes per hole
+  -- "place" (finish within the round's division) and "date" are added by migrate()
   PRIMARY KEY (player_id, event_id, round)
 );
 CREATE INDEX IF NOT EXISTS rounds_layout ON rounds(layout_id);
@@ -89,6 +91,16 @@ function migrate(db: DatabaseSync) {
     // Everyone in a database from before the flag existed was a club player.
     db.exec("ALTER TABLE players ADD COLUMN member INTEGER NOT NULL DEFAULT 0");
     db.exec("UPDATE players SET member = 1");
+  }
+  const roundCols = (db.prepare("PRAGMA table_info(rounds)").all() as { name: string }[]).map((c) => c.name);
+  // Place within the round's division, so each week of a league counts as a finish.
+  // Rounds imported before this column existed get one when their event is re-imported.
+  if (!roundCols.includes("place")) db.exec("ALTER TABLE rounds ADD COLUMN place INTEGER");
+  if (!roundCols.includes("date")) db.exec("ALTER TABLE rounds ADD COLUMN date TEXT");
+  const layoutCols = (db.prepare("PRAGMA table_info(layouts)").all() as { name: string }[]).map((c) => c.name);
+  if (!layoutCols.includes("source_name")) {
+    db.exec("ALTER TABLE layouts ADD COLUMN source_name TEXT");
+    db.exec("UPDATE layouts SET source_name = name");
   }
 }
 

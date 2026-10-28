@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { adminConfigured, isAdmin } from "@/lib/auth";
-import { getLayouts, getPlayers } from "@/lib/data";
+import { getEvents, getLayouts, getPlayers } from "@/lib/data";
 import { pdgaConfigured } from "@/lib/pdga";
 import { logoutAction } from "./actions";
 import { LoginForm, PdgaRefresh, PdgaTournamentImport, UdiscImport } from "./forms";
+import { EventList } from "./events";
 import { AddMemberForm, PlayerList } from "./members";
 
 export const metadata: Metadata = {
@@ -33,7 +34,7 @@ export default async function AdminPage() {
     );
   }
 
-  const [players, layouts] = await Promise.all([getPlayers(), getLayouts()]);
+  const [players, layouts, events] = await Promise.all([getPlayers(), getLayouts(), getEvents()]);
 
   return (
     <div className="flex flex-col gap-10">
@@ -54,6 +55,13 @@ export default async function AdminPage() {
       >
         <AddMemberForm pdgaLookup={pdgaConfigured()} />
         <PlayerList players={players} />
+      </Section>
+
+      <Section
+        title="Events"
+        description="A League counts each round (each week) as a separate finish; a Tournament counts only the final place. Change an event's type here at any time. Events imported before round places were tracked need to be imported again for their weekly places to appear."
+      >
+        <EventList events={events} />
       </Section>
 
       <Section

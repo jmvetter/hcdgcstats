@@ -1,7 +1,7 @@
 import "server-only";
 import { db, slugify, transaction } from "./db";
 import type { EventType } from "./data";
-import { upsertLayout, type LayoutInput } from "./layouts";
+import { mergeWeeklyLayouts, upsertLayout, type LayoutInput } from "./layouts";
 
 // One player's round, on the layout they played.
 export type RoundInput = {
@@ -11,6 +11,7 @@ export type RoundInput = {
   toPar: number | null;
   rating: number | null; // PDGA round rating
   holeScores: number[] | null;
+  date?: string | null; // YYYY-MM-DD, when the source gives one
 };
 
 // One player's result in an event, as read from an import source.
@@ -99,12 +100,16 @@ export function saveEventImport(
        score = excluded.score, to_par = excluded.to_par`,
   );
   const insertRound = db.prepare(
-    `INSERT INTO rounds (player_id, event_id, round, layout_id, score, to_par, rating, hole_scores)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO rounds (player_id, event_id, round, layout_id, score, to_par, rating, hole_scores, place, date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (player_id, event_id, round) DO UPDATE SET
        layout_id = excluded.layout_id, score = excluded.score, to_par = excluded.to_par,
-       rating = excluded.rating, hole_scores = excluded.hole_scores`,
+       rating = excluded.rating, hole_scores = excluded.hole_scores,
+       place = excluded.place, date = excluded.date`,
   );
+  // Ranked across every row, before any members-only filtering, so places
+  // reflect the whole field.
+  const roundPlaces = rankRounds(rows);
 
   return transaction(() => {
     for (const layout of layouts) upsertLayout(layout);
@@ -164,13 +169,36 @@ export function saveEventImport(
           r.toPar,
           r.rating,
           r.holeScores ? JSON.stringify(r.holeScores) : null,
+          roundPlaces.get(r) ?? null,
+          r.date ?? null,
         );
         roundCount++;
       }
       saved++;
     }
+    mergeWeeklyLayouts();
     return { eventId, results: saved, rounds: roundCount, newPlayers, skipped: rows.length - saved };
   });
+}
+
+// Each round's place within its division: lowest score first, equal scores
+// share a place (1, 2, 2, 4).
+function rankRounds(rows: ImportRow[]): Map<RoundInput, number> {
+  const groups = new Map<string, RoundInput[]>();
+  for (const row of rows) {
+    for (const r of row.rounds) {
+      const key = `${row.division ?? ""}|${r.round}`;
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+  }
+  const places = new Map<RoundInput, number>();
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.score - b.score);
+    sorted.forEach((r, i) => {
+      places.set(r, i > 0 && r.score === sorted[i - 1].score ? places.get(sorted[i - 1])! : i + 1);
+    });
+  }
+  return places;
 }
 
 function mostCommon(nums: number[]): number | null {
