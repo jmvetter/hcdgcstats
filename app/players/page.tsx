@@ -1,7 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DivisionFilter } from "@/app/components/division-filter";
 import { TypeFilter } from "@/app/components/type-filter";
-import { getPlayerStats, getPlayers, parseTypeFilter, type EventType, type Player, type PlayerStats } from "@/lib/data";
+import {
+  getDivisions,
+  getPlayerStats,
+  getPlayers,
+  parseTypeFilter,
+  type EventType,
+  type Player,
+  type PlayerStats,
+} from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Players",
@@ -49,19 +58,31 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
   const dir: Dir = query.dir === "asc" || query.dir === "desc" ? query.dir : COLUMNS[sort].firstDir;
   // ?type=league or ?type=tournament limits every stat to that kind of event.
   const type = parseTypeFilter(query.type);
+  // ?division=MA2 limits the grid to finishes played in that division. With a
+  // division or type filter on, only players with matching finishes are listed.
+  const divisions = await getDivisions();
+  const division = typeof query.division === "string" && divisions.includes(query.division) ? query.division : undefined;
 
   const players = await getPlayers({ membersOnly: !showAll });
-  const rows = sortRows(
-    await Promise.all(players.map(async (player) => ({ player, stats: await getPlayerStats(player.id, type) }))),
-    sort,
-    dir,
+  const allRows = await Promise.all(
+    players.map(async (player) => ({ player, stats: await getPlayerStats(player.id, { type, division }) })),
   );
+  const filtered = Boolean(division || type);
+  const rows = sortRows(filtered ? allRows.filter((r) => r.stats.finishes > 0) : allRows, sort, dir);
 
-  const href = (changes: { all?: boolean; sort?: SortKey; dir?: Dir; type?: EventType | null }) => {
+  const href = (changes: {
+    all?: boolean;
+    sort?: SortKey;
+    dir?: Dir;
+    type?: EventType | null;
+    division?: string | null;
+  }) => {
     const qs = new URLSearchParams();
     if (changes.all ?? showAll) qs.set("all", "1");
     const t = changes.type === undefined ? type : changes.type;
     if (t) qs.set("type", t.toLowerCase());
+    const dv = changes.division === undefined ? division : changes.division;
+    if (dv) qs.set("division", dv);
     const s = changes.sort ?? sort;
     const d = changes.dir ?? dir;
     if (s !== "name" || d !== "asc") {
@@ -77,6 +98,13 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">{showAll ? "All players" : "Club members"}</h1>
         <div className="flex flex-wrap items-center gap-4 text-sm">
+          <DivisionFilter
+            value={division ?? ""}
+            options={[
+              { label: "All divisions", value: "", href: href({ division: null }) },
+              ...divisions.map((d) => ({ label: d, value: d, href: href({ division: d }) })),
+            ]}
+          />
           <TypeFilter type={type} href={(t) => href({ type: t })} />
           <Link href={href({ all: !showAll })} className="text-zinc-500 hover:underline">
             {showAll ? "Show club members only" : "Show all players"}
@@ -89,8 +117,17 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
 
       {rows.length === 0 ? (
         <p className="text-zinc-500">
-          No {showAll ? "players" : "club members"} yet. Add them on the{" "}
-          <Link href="/admin" className="underline">admin page</Link>.
+          {filtered ? (
+            <>
+              No {showAll ? "players" : "club members"} with {type ? `${type.toLowerCase()} ` : ""}finishes
+              {division ? ` in ${division}` : ""}.
+            </>
+          ) : (
+            <>
+              No {showAll ? "players" : "club members"} yet. Add them on the{" "}
+              <Link href="/admin" className="underline">admin page</Link>.
+            </>
+          )}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -133,7 +170,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
                       {player.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3">{player.division ?? "—"}</td>
+                  <td className="px-4 py-3">{division ?? player.division ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{player.rating ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{stats.finishes}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{stats.wins}</td>

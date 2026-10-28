@@ -110,8 +110,18 @@ export async function getEvents(): Promise<ClubEvent[]> {
   return rows.map((r) => ({ ...r }));
 }
 
-const typeFilter = (type?: EventType) => (type ? "AND e.type = ?" : "");
-const typeArgs = (type?: EventType) => (type ? [type] : []);
+// Limits which finishes count. `division` is the division the finish was
+// played in, which can differ from event to event for the same player.
+export type FinishFilter = { type?: EventType; division?: string };
+
+// SQL conditions for a FinishFilter. `results` is the alias of the results
+// table in the query, which holds the division played.
+function filterSql({ type, division }: FinishFilter, results: string) {
+  return {
+    sql: `${type ? "AND e.type = ?" : ""} ${division ? `AND ${results}.division = ?` : ""}`,
+    args: [...(type ? [type] : []), ...(division ? [division] : [])],
+  };
+}
 
 type EventCols = {
   event_id: string;
@@ -135,19 +145,21 @@ const toEvent = (r: EventCols): ClubEvent => ({
 // placed within that round's division; tournaments count their final place.
 // League events imported before round places were stored fall back to the
 // overall result.
-export async function getPlayerFinishes(playerId: string, type?: EventType): Promise<Finish[]> {
+export async function getPlayerFinishes(playerId: string, filter: FinishFilter = {}): Promise<Finish[]> {
   await connection();
+  const resultsFilter = filterSql(filter, "r");
+  const roundsFilter = filterSql(filter, "res");
   const eventResults = db
     .prepare(
       `SELECT r.event_id, r.division, r.place, r.score, r.to_par,
               e.name, e.date AS event_date, e.course, e.type, e.par
        FROM results r JOIN events e ON e.id = r.event_id
-       WHERE r.player_id = ? ${typeFilter(type)}
+       WHERE r.player_id = ? ${resultsFilter.sql}
          AND (e.type = 'Tournament' OR NOT EXISTS (
            SELECT 1 FROM rounds rd
            WHERE rd.player_id = r.player_id AND rd.event_id = r.event_id AND rd.place IS NOT NULL))`,
     )
-    .all(playerId, ...typeArgs(type)) as (EventCols & {
+    .all(playerId, ...resultsFilter.args) as (EventCols & {
     division: string | null;
     place: number | null;
     score: number | null;
@@ -161,9 +173,9 @@ export async function getPlayerFinishes(playerId: string, type?: EventType): Pro
        FROM rounds rd
        JOIN events e ON e.id = rd.event_id
        LEFT JOIN results res ON res.player_id = rd.player_id AND res.event_id = rd.event_id
-       WHERE rd.player_id = ? AND e.type = 'League' AND rd.place IS NOT NULL ${typeFilter(type)}`,
+       WHERE rd.player_id = ? AND e.type = 'League' AND rd.place IS NOT NULL ${roundsFilter.sql}`,
     )
-    .all(playerId, ...typeArgs(type)) as (EventCols & {
+    .all(playerId, ...roundsFilter.args) as (EventCols & {
     round: number;
     place: number;
     score: number;
@@ -213,23 +225,35 @@ export function computeStats(finishes: Finish[], roundRatings: number[]): Player
 
 // PDGA round ratings for every rated round the player has played. UDisc league
 // rounds usually have none.
-export async function getPlayerRoundRatings(playerId: string, type?: EventType): Promise<number[]> {
+export async function getPlayerRoundRatings(playerId: string, filter: FinishFilter = {}): Promise<number[]> {
   await connection();
+  const { sql, args } = filterSql(filter, "res");
   const rows = db
     .prepare(
-      `SELECT rd.rating FROM rounds rd JOIN events e ON e.id = rd.event_id
-       WHERE rd.player_id = ? AND rd.rating IS NOT NULL ${typeFilter(type)}`,
+      `SELECT rd.rating FROM rounds rd
+       JOIN events e ON e.id = rd.event_id
+       LEFT JOIN results res ON res.player_id = rd.player_id AND res.event_id = rd.event_id
+       WHERE rd.player_id = ? AND rd.rating IS NOT NULL ${sql}`,
     )
-    .all(playerId, ...typeArgs(type)) as { rating: number }[];
+    .all(playerId, ...args) as { rating: number }[];
   return rows.map((r) => r.rating);
 }
 
-export async function getPlayerStats(playerId: string, type?: EventType): Promise<PlayerStats> {
+export async function getPlayerStats(playerId: string, filter: FinishFilter = {}): Promise<PlayerStats> {
   const [finishes, ratings] = await Promise.all([
-    getPlayerFinishes(playerId, type),
-    getPlayerRoundRatings(playerId, type),
+    getPlayerFinishes(playerId, filter),
+    getPlayerRoundRatings(playerId, filter),
   ]);
   return computeStats(finishes, ratings);
+}
+
+// Every division anyone has played in, for the division filter.
+export async function getDivisions(): Promise<string[]> {
+  await connection();
+  const rows = db
+    .prepare("SELECT DISTINCT division FROM results WHERE division IS NOT NULL ORDER BY division")
+    .all() as { division: string }[];
+  return rows.map((r) => r.division);
 }
 
 // Reads the ?type= filter shared by the players list and profiles.

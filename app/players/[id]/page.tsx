@@ -26,9 +26,9 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
   if (!player) notFound();
 
   const [finishes, layouts, ratings] = await Promise.all([
-    getPlayerFinishes(player.id, type),
+    getPlayerFinishes(player.id, { type }),
     getPlayerLayouts(player.id),
-    getPlayerRoundRatings(player.id, type),
+    getPlayerRoundRatings(player.id, { type }),
   ]);
   const stats = computeStats(finishes, ratings);
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
