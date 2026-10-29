@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PlayerHoleTable } from "@/app/components/hole-table";
+import { ScoringBreakdownBar } from "@/app/components/scoring-breakdown";
 import { TypeFilter } from "@/app/components/type-filter";
 import {
   computeStats,
+  getLayoutHoleStats,
   getPlayer,
   getPlayerFinishes,
+  getPlayerHoleStats,
   getPlayerLayouts,
   getPlayerRoundRatings,
+  getPlayerScoring,
   parseTypeFilter,
 } from "@/lib/data";
 import { PdgaLink } from "@/app/components/pdga-link";
@@ -26,11 +31,19 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const [finishes, layouts, ratings] = await Promise.all([
+  const [finishes, layouts, ratings, scoring, holeStats] = await Promise.all([
     getPlayerFinishes(player.id, { type }),
     getPlayerLayouts(player.id),
     getPlayerRoundRatings(player.id, { type }),
+    getPlayerScoring(player.id, { type }),
+    getPlayerHoleStats(player.id),
   ]);
+  // The field's average on each hole, to compare the player against.
+  const fieldHoles = new Map(
+    await Promise.all(
+      holeStats.map(async ({ layout }) => [layout.id, await getLayoutHoleStats(layout.id)] as const),
+    ),
+  );
   const stats = computeStats(finishes, ratings);
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
 
@@ -83,6 +96,11 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         />
       </dl>
 
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Scoring</h2>
+        <ScoringBreakdownBar data={scoring} />
+      </section>
+
       {layouts.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">Layouts</h2>
@@ -115,6 +133,36 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {holeStats.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Hole by hole</h2>
+          <p className="-mt-2 text-sm text-zinc-500">
+            Average on each hole, compared with par and with everyone who played the layout.
+          </p>
+          <div className="flex flex-col gap-2">
+            {holeStats.map(({ layout, holes }) => (
+              <details
+                key={layout.id}
+                className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <summary className="cursor-pointer px-4 py-3 font-medium">
+                  {layout.course} – {layout.name}
+                  <span className="ml-2 text-sm font-normal text-zinc-500">
+                    {(() => {
+                      const n = Math.max(...holes.map((h) => h.rounds));
+                      return `${n} ${n === 1 ? "round" : "rounds"}`;
+                    })()}
+                  </span>
+                </summary>
+                <div className="border-t border-zinc-200 dark:border-zinc-800">
+                  <PlayerHoleTable mine={holes} field={fieldHoles.get(layout.id) ?? []} />
+                </div>
+              </details>
+            ))}
           </div>
         </section>
       )}

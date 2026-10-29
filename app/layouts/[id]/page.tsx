@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getLayout, getLayoutLeaderboard } from "@/lib/data";
+import { HoleDifficultyTable } from "@/app/components/hole-table";
+import { getLayout, getLayoutHoleStats, getLayoutLeaderboard } from "@/lib/data";
 import { PdgaLink } from "@/app/components/pdga-link";
 import { formatToPar, pdgaPlayerUrl } from "@/lib/format";
 
@@ -24,7 +25,10 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
   // Club members by default; ?all=1 includes players from outside tournaments.
   const showAll = query.all === "1";
   const minRounds = MIN_ROUNDS_OPTIONS.includes(Number(query.min)) ? Number(query.min) : 1;
-  const standings = await getLayoutLeaderboard(layout.id, { membersOnly: !showAll, minRounds });
+  const [standings, holes] = await Promise.all([
+    getLayoutLeaderboard(layout.id, { membersOnly: !showAll, minRounds }),
+    getLayoutHoleStats(layout.id, { membersOnly: !showAll }),
+  ]);
 
   const href = (changes: { all?: boolean; min?: number }) => {
     const all = changes.all ?? showAll;
@@ -124,33 +128,12 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
 
       {layout.holeDetails && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Holes</h2>
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-            <table className="w-full text-center text-sm tabular-nums">
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-zinc-500">Hole</th>
-                  {layout.holeDetails.map((h, i) => (
-                    <td key={i} className="px-2 py-2">{h.label}</td>
-                  ))}
-                </tr>
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-zinc-500">Par</th>
-                  {layout.holeDetails.map((h, i) => (
-                    <td key={i} className="px-2 py-2">{h.par ?? "—"}</td>
-                  ))}
-                </tr>
-                {layout.holeDetails.some((h) => h.length) && (
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-zinc-500">Length ({unit})</th>
-                    {layout.holeDetails.map((h, i) => (
-                      <td key={i} className="px-2 py-2">{h.length ?? "—"}</td>
-                    ))}
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <h2 className="text-lg font-semibold">Hole difficulty</h2>
+          <p className="-mt-2 text-sm text-zinc-500">
+            How each hole plays for {showAll ? "everyone" : "club members"} on this layout. Difficulty ranks holes by
+            average score relative to par (1 = hardest).
+          </p>
+          <HoleDifficultyTable holes={holes} unit={unit} />
         </section>
       )}
     </div>

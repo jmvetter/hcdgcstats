@@ -423,3 +423,164 @@ export async function getPlayerLayouts(playerId: string): Promise<PlayerLayoutSt
   }
   return out.sort((a, b) => b.rounds - a.rounds);
 }
+
+// ---- Hole-by-hole stats ----------------------------------------------------
+// Worked out from each round's stored hole scores against its layout's hole
+// pars. Rounds without hole scores (e.g. UDisc imports) or whose hole count
+// doesn't match the layout are left out.
+
+export type ScoreBand = "eagle" | "birdie" | "par" | "bogey" | "double";
+
+export const SCORE_BANDS: { band: ScoreBand; label: string }[] = [
+  { band: "eagle", label: "Eagle or better" },
+  { band: "birdie", label: "Birdie" },
+  { band: "par", label: "Par" },
+  { band: "bogey", label: "Bogey" },
+  { band: "double", label: "Double bogey+" },
+];
+
+function scoreBand(strokes: number, par: number): ScoreBand {
+  const d = strokes - par;
+  return d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 0 ? "par" : d === 1 ? "bogey" : "double";
+}
+
+type HoleRound = {
+  player_id: string;
+  layout_id: string;
+  hole_scores: string;
+  hole_details: string;
+};
+
+// Pairs of [strokes, par] for each hole of each matching round.
+function holesOf(r: HoleRound): { strokes: number; par: number }[] | null {
+  const scores = JSON.parse(r.hole_scores) as number[];
+  const holes = JSON.parse(r.hole_details) as { par: number | null }[];
+  if (scores.length !== holes.length || holes.some((h) => h.par === null)) return null;
+  return scores.map((strokes, i) => ({ strokes, par: holes[i].par! }));
+}
+
+export type ScoringBreakdown = { holes: number; counts: Record<ScoreBand, number> };
+
+// How often a player makes eagle, birdie, par, bogey or worse.
+export async function getPlayerScoring(playerId: string, filter: FinishFilter = {}): Promise<ScoringBreakdown> {
+  await connection();
+  const { sql, args } = filterSql(filter, "res");
+  const rows = db
+    .prepare(
+      `SELECT rd.player_id, rd.layout_id, rd.hole_scores, l.hole_details
+       FROM rounds rd
+       JOIN layouts l ON l.id = rd.layout_id
+       JOIN events e ON e.id = rd.event_id
+       LEFT JOIN results res ON res.player_id = rd.player_id AND res.event_id = rd.event_id
+       WHERE rd.player_id = ? AND rd.hole_scores IS NOT NULL AND l.hole_details IS NOT NULL ${sql}`,
+    )
+    .all(playerId, ...args) as HoleRound[];
+
+  const counts: Record<ScoreBand, number> = { eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0 };
+  let holes = 0;
+  for (const r of rows) {
+    for (const h of holesOf(r) ?? []) {
+      counts[scoreBand(h.strokes, h.par)]++;
+      holes++;
+    }
+  }
+  return { holes, counts };
+}
+
+export type HoleStat = {
+  hole: number; // 1-based position on the layout
+  label: string;
+  par: number | null;
+  length: number | null;
+  rounds: number;
+  avg: number | null; // average strokes
+  birdieOrBetter: number; // share of rounds, 0-1
+  atPar: number;
+  bogeyOrWorse: number;
+  difficultyRank: number | null; // 1 = hardest (highest average over par)
+};
+
+function holeStats(layoutId: string, rows: HoleRound[]): HoleStat[] {
+  const layout = db.prepare("SELECT hole_details FROM layouts WHERE id = ?").get(layoutId) as
+    | { hole_details: string | null }
+    | undefined;
+  const details = layout?.hole_details
+    ? (JSON.parse(layout.hole_details) as { label: string; par: number | null; length: number | null }[])
+    : [];
+
+  const totals = details.map(() => ({ rounds: 0, strokes: 0, under: 0, even: 0, over: 0 }));
+  for (const r of rows) {
+    const holes = holesOf(r);
+    if (!holes || holes.length !== details.length) continue;
+    holes.forEach((h, i) => {
+      const t = totals[i];
+      t.rounds++;
+      t.strokes += h.strokes;
+      if (h.strokes < h.par) t.under++;
+      else if (h.strokes === h.par) t.even++;
+      else t.over++;
+    });
+  }
+
+  const stats: HoleStat[] = details.map((d, i) => {
+    const t = totals[i];
+    return {
+      hole: i + 1,
+      label: d.label,
+      par: d.par,
+      length: d.length,
+      rounds: t.rounds,
+      avg: t.rounds ? t.strokes / t.rounds : null,
+      birdieOrBetter: t.rounds ? t.under / t.rounds : 0,
+      atPar: t.rounds ? t.even / t.rounds : 0,
+      bogeyOrWorse: t.rounds ? t.over / t.rounds : 0,
+      difficultyRank: null,
+    };
+  });
+
+  // Rank by average relative to par, so a par 4 isn't "harder" just for being a par 4.
+  const ranked = stats
+    .filter((s) => s.avg !== null && s.par !== null)
+    .sort((a, b) => b.avg! - b.par! - (a.avg! - a.par!));
+  ranked.forEach((s, i) => (s.difficultyRank = i + 1));
+  return stats;
+}
+
+// How hard each hole of a layout plays, across everyone (or club members).
+export async function getLayoutHoleStats(layoutId: string, { membersOnly = false } = {}): Promise<HoleStat[]> {
+  await connection();
+  const rows = db
+    .prepare(
+      `SELECT rd.player_id, rd.layout_id, rd.hole_scores, l.hole_details
+       FROM rounds rd
+       JOIN layouts l ON l.id = rd.layout_id
+       JOIN players p ON p.id = rd.player_id
+       WHERE rd.layout_id = ? AND rd.hole_scores IS NOT NULL ${membersOnly ? "AND p.member = 1" : ""}`,
+    )
+    .all(layoutId) as HoleRound[];
+  return holeStats(layoutId, rows);
+}
+
+// One player's hole-by-hole averages on each layout they've played.
+export async function getPlayerHoleStats(playerId: string): Promise<{ layout: Layout; holes: HoleStat[] }[]> {
+  await connection();
+  const rows = db
+    .prepare(
+      `SELECT rd.player_id, rd.layout_id, rd.hole_scores, l.hole_details
+       FROM rounds rd JOIN layouts l ON l.id = rd.layout_id
+       WHERE rd.player_id = ? AND rd.hole_scores IS NOT NULL AND l.hole_details IS NOT NULL`,
+    )
+    .all(playerId) as HoleRound[];
+
+  const byLayout = new Map<string, HoleRound[]>();
+  for (const r of rows) byLayout.set(r.layout_id, [...(byLayout.get(r.layout_id) ?? []), r]);
+
+  const out: { layout: Layout; holes: HoleStat[] }[] = [];
+  for (const [layoutId, layoutRows] of byLayout) {
+    const layout = db.prepare("SELECT * FROM layouts WHERE id = ?").get(layoutId) as LayoutRow | undefined;
+    if (!layout) continue;
+    const holes = holeStats(layoutId, layoutRows);
+    if (holes.some((h) => h.rounds > 0)) out.push({ layout: toLayout(layout), holes });
+  }
+  return out.sort((a, b) => (b.holes[0]?.rounds ?? 0) - (a.holes[0]?.rounds ?? 0));
+}
