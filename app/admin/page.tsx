@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import { adminConfigured, isAdmin } from "@/lib/auth";
 import { getEvents, getLayouts, getPlayers } from "@/lib/data";
@@ -44,6 +45,18 @@ export default async function AdminPage() {
           <button className="text-sm text-zinc-500 hover:underline">Log out</button>
         </form>
       </div>
+
+      <Section
+        title="League nights"
+        description="Check players in and track who's paid, pull in the night's results from PDGA or UDisc, and get each division's payout (top 40% by default)."
+      >
+        <Link
+          href="/admin/league-nights"
+          className="self-start rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          Open league nights →
+        </Link>
+      </Section>
 
       <Section
         title="Club members"

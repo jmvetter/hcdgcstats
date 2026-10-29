@@ -73,6 +73,32 @@ CREATE TABLE IF NOT EXISTS rounds (
   PRIMARY KEY (player_id, event_id, round)
 );
 CREATE INDEX IF NOT EXISTS rounds_layout ON rounds(layout_id);
+
+-- A league night: who checked in and paid, and how the payout is figured.
+-- Results come from an imported event's round (event_id + round). Money is in
+-- whole dollars.
+CREATE TABLE IF NOT EXISTS league_nights (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+  round INTEGER,
+  entry_fee INTEGER NOT NULL,
+  pool_per_player INTEGER NOT NULL, -- of each entry, what goes into the division's pool
+  ace_per_player INTEGER NOT NULL, -- of each entry, what goes to the ace pot; the rest is the league fee
+  added_cash TEXT NOT NULL DEFAULT '{}', -- JSON: { "MA1": 20 }
+  settings TEXT NOT NULL, -- JSON PayoutSettings (lib/payout.ts)
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS checkins (
+  night_id INTEGER NOT NULL REFERENCES league_nights(id) ON DELETE CASCADE,
+  player_id TEXT NOT NULL REFERENCES players(id),
+  division TEXT NOT NULL,
+  paid INTEGER NOT NULL DEFAULT 0,
+  checked_in_at TEXT NOT NULL,
+  PRIMARY KEY (night_id, player_id)
+);
 `;
 
 function open(): DatabaseSync {

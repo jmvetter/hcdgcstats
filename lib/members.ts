@@ -54,9 +54,10 @@ export function updatePlayer(id: string, input: MemberInput & { member: boolean 
   ).run(input.name, input.pdgaNumber, input.division, input.member ? 1 : 0, id);
 }
 
-// Removes a player and all of their results.
+// Removes a player and all of their results and league check-ins.
 export function deletePlayer(id: string) {
   transaction(() => {
+    db.prepare("DELETE FROM checkins WHERE player_id = ?").run(id);
     db.prepare("DELETE FROM results WHERE player_id = ?").run(id);
     db.prepare("DELETE FROM rounds WHERE player_id = ?").run(id);
     db.prepare("DELETE FROM players WHERE id = ?").run(id);
