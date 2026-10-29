@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { HoleDifficultyTable } from "@/app/components/hole-table";
+import { HoleAverageScorecard, HoleDifficultyTable } from "@/app/components/hole-table";
 import { getLayout, getLayoutHoleStats, getLayoutLeaderboard } from "@/lib/data";
 import { PdgaLink } from "@/app/components/pdga-link";
 import { formatToPar, pdgaPlayerUrl } from "@/lib/format";
@@ -60,6 +60,17 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
             .join(" · ")}
         </p>
       </div>
+
+      {layout.holeDetails && holes.some((h) => h.rounds > 0) && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Scoring average by hole</h2>
+          <p className="-mt-2 text-sm text-zinc-500">
+            Average strokes on each hole for {showAll ? "everyone" : "club members"}, over{" "}
+            {Math.max(...holes.map((h) => h.rounds))} rounds. Blue holes play under par, red over.
+          </p>
+          <HoleAverageScorecard holes={holes} />
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
