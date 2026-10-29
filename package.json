@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "import:pdga": "tsx --conditions=react-server scripts/import-pdga.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
@@ -23,6 +24,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "packageManager": "pnpm@12.9.1"

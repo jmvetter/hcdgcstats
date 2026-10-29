@@ -78,7 +78,9 @@ CREATE INDEX IF NOT EXISTS rounds_layout ON rounds(layout_id);
 function open(): DatabaseSync {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  // busy_timeout: wait for a moment rather than fail if the site and an import
+  // script (scripts/import-pdga.ts) write at the same time.
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return db;
 }
 
