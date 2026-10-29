@@ -30,7 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-zinc-50 dark:bg-black">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <nav className="mx-auto flex w-full max-w-4xl items-center gap-4 whitespace-nowrap px-4 py-4 sm:gap-6">
+          <nav className="mx-auto flex w-full max-w-4xl items-center gap-3.5 whitespace-nowrap px-4 py-4 sm:gap-6">
             <Link href="/" className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
               {/* White artwork on transparent; inverted to black in light mode. */}
               <Image
@@ -42,7 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 unoptimized
                 className="h-6 w-auto invert sm:h-7 dark:invert-0"
               />
-              <span>Stats</span>
+              <span className="hidden min-[400px]:inline">Stats</span>
             </Link>
             <Link
               href="/players"
@@ -55,6 +55,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Layouts
+            </Link>
+            <Link
+              href="/leagues"
+              className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+            >
+              League
             </Link>
             <Link
               href="/admin"

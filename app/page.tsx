@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getEvents, getPlayers } from "@/lib/data";
+import { getLeagueYears } from "@/lib/recap";
 import { PdgaLink } from "@/app/components/pdga-link";
 import { formatDate, pdgaEventUrl } from "@/lib/format";
 
 export default async function Home() {
-  const [players, events] = await Promise.all([getPlayers(), getEvents()]);
+  const [players, events, leagueYears] = await Promise.all([getPlayers(), getEvents(), getLeagueYears()]);
   const latest = events[0];
 
   return (
@@ -48,12 +49,22 @@ export default async function Home() {
         />
       </section>
 
-      <Link
-        href="/players"
-        className="self-start rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-      >
-        View players →
-      </Link>
+      <div className="flex flex-wrap gap-3">
+        <Link
+          href="/players"
+          className="rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          View players →
+        </Link>
+        {leagueYears[0] && (
+          <Link
+            href={`/leagues/${leagueYears[0]}`}
+            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            {leagueYears[0]} league recap →
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
