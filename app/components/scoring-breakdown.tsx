@@ -4,7 +4,7 @@ import { SCORE_BANDS, type ScoreBand, type ScoringBreakdown } from "@/lib/data";
 // further from par. Validated for colour-blind separation in both modes (see
 // the dataviz palette check); the legend always repeats label, count and share,
 // so colour never carries the meaning alone.
-const BAND_COLOR: Record<ScoreBand, string> = {
+export const BAND_COLOR: Record<ScoreBand, string> = {
   eagle: "bg-[#1c5cab] dark:bg-[#6da7ec]",
   birdie: "bg-[#6da7ec] dark:bg-[#256abf]",
   par: "bg-[#e4e3de] dark:bg-[#34342f]",
@@ -14,7 +14,7 @@ const BAND_COLOR: Record<ScoreBand, string> = {
 
 const pct = (n: number, total: number) => `${((n / total) * 100).toFixed(1)}%`;
 
-export function ScoringBreakdownBar({ data }: { data: ScoringBreakdown }) {
+export function ScoringBreakdownBar({ data, noun = "holes played" }: { data: ScoringBreakdown; noun?: string }) {
   if (data.holes === 0) {
     return <p className="text-sm text-zinc-500">No hole-by-hole scores yet.</p>;
   }
@@ -49,7 +49,7 @@ export function ScoringBreakdownBar({ data }: { data: ScoringBreakdown }) {
             </div>
           ))}
         </dl>
-        <p className="mt-2 text-xs text-zinc-500">Across {data.holes.toLocaleString()} holes played.</p>
+        <p className="mt-2 text-xs text-zinc-500">Across {data.holes.toLocaleString()} {noun}.</p>
       </figcaption>
     </figure>
   );

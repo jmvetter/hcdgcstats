@@ -461,7 +461,7 @@ export const SCORE_BANDS: { band: ScoreBand; label: string }[] = [
   { band: "double", label: "Double bogey+" },
 ];
 
-function scoreBand(strokes: number, par: number): ScoreBand {
+export function scoreBand(strokes: number, par: number): ScoreBand {
   const d = strokes - par;
   return d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 0 ? "par" : d === 1 ? "bogey" : "double";
 }
@@ -581,6 +581,90 @@ export async function getLayoutHoleStats(layoutId: string, { membersOnly = false
     )
     .all(layoutId) as HoleRound[];
   return holeStats(layoutId, rows);
+}
+
+export type HoleScore = { strokes: number; eventId: string; eventName: string; round: number; date: string | null };
+
+export type HolePlayer = {
+  playerId: string;
+  name: string;
+  pdgaNumber: number | null;
+  member: boolean;
+  avg: number;
+  best: number;
+  counts: Record<ScoreBand, number>;
+  scores: HoleScore[]; // oldest first
+};
+
+// Every player's scores on one hole of a layout (hole is 1-based), best average first.
+export async function getLayoutHolePlayers(
+  layoutId: string,
+  hole: number,
+  { membersOnly = false } = {},
+): Promise<{ field: ScoringBreakdown; players: HolePlayer[] }> {
+  await connection();
+  const layout = db.prepare("SELECT hole_details FROM layouts WHERE id = ?").get(layoutId) as
+    | { hole_details: string | null }
+    | undefined;
+  const details = layout?.hole_details ? (JSON.parse(layout.hole_details) as { par: number | null }[]) : [];
+  const par = details[hole - 1]?.par ?? null;
+  const empty = (): Record<ScoreBand, number> => ({ eagle: 0, birdie: 0, par: 0, bogey: 0, double: 0 });
+  const field: ScoringBreakdown = { holes: 0, counts: empty() };
+  if (par === null) return { field, players: [] };
+
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.name, p.pdga_number, p.member, rd.hole_scores, rd.round,
+              COALESCE(rd.date, e.date) AS date, e.id AS event_id, e.name AS event_name
+       FROM rounds rd
+       JOIN players p ON p.id = rd.player_id
+       JOIN events e ON e.id = rd.event_id
+       WHERE rd.layout_id = ? AND rd.hole_scores IS NOT NULL AND p.team = 0 ${membersOnly ? "AND p.member = 1" : ""}
+       ORDER BY date, e.id, rd.round`,
+    )
+    .all(layoutId) as {
+    id: string;
+    name: string;
+    pdga_number: number | null;
+    member: number;
+    hole_scores: string;
+    round: number;
+    date: string | null;
+    event_id: string;
+    event_name: string;
+  }[];
+
+  const byPlayer = new Map<string, HolePlayer>();
+  for (const r of rows) {
+    const scores = JSON.parse(r.hole_scores) as number[];
+    if (scores.length !== details.length) continue;
+    const strokes = scores[hole - 1];
+    let p = byPlayer.get(r.id);
+    if (!p) {
+      p = {
+        playerId: r.id,
+        name: r.name,
+        pdgaNumber: r.pdga_number,
+        member: r.member === 1,
+        avg: 0,
+        best: strokes,
+        counts: empty(),
+        scores: [],
+      };
+      byPlayer.set(r.id, p);
+    }
+    const band = scoreBand(strokes, par);
+    p.counts[band]++;
+    field.counts[band]++;
+    field.holes++;
+    p.best = Math.min(p.best, strokes);
+    p.scores.push({ strokes, eventId: r.event_id, eventName: r.event_name, round: r.round, date: r.date });
+  }
+
+  const players = [...byPlayer.values()];
+  for (const p of players) p.avg = p.scores.reduce((a, s) => a + s.strokes, 0) / p.scores.length;
+  players.sort((a, b) => a.avg - b.avg || b.scores.length - a.scores.length || a.name.localeCompare(b.name));
+  return { field, players };
 }
 
 // One player's hole-by-hole averages on each layout they've played.

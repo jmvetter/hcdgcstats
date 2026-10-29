@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { HoleStat } from "@/lib/data";
 import { formatToPar } from "@/lib/format";
 
@@ -19,7 +20,7 @@ const sum = (ns: (number | null)[]) => (ns.every((n) => n !== null) ? ns.reduce<
 
 // The field's average on each hole, laid out like a scorecard: front and back
 // halves, each with a subtotal, and the average round at the end.
-export function HoleAverageScorecard({ holes }: { holes: HoleStat[] }) {
+export function HoleAverageScorecard({ holes, holeHref }: { holes: HoleStat[]; holeHref: (hole: number) => string }) {
   if (!holes.some((h) => h.rounds > 0)) return null;
   const half = holes.length > 12 ? Math.ceil(holes.length / 2) : holes.length;
   const parts = [holes.slice(0, half), holes.slice(half)].filter((p) => p.length);
@@ -41,7 +42,14 @@ export function HoleAverageScorecard({ holes }: { holes: HoleStat[] }) {
                 <tr className="text-zinc-500">
                   <th scope="row" className="w-16 px-3 py-1.5 text-left font-medium">Hole</th>
                   {part.map((h) => (
-                    <th key={h.hole} className={`${cell} font-medium`}>{h.label}</th>
+                    <th key={h.hole} className={`${cell} font-medium`}>
+                      <Link
+                        href={holeHref(h.hole)}
+                        className="text-black underline decoration-zinc-300 underline-offset-2 hover:decoration-current dark:text-white dark:decoration-zinc-600"
+                      >
+                        {h.label}
+                      </Link>
+                    </th>
                   ))}
                   {parts.length > 1 && <th className={`${cell} font-medium`}>{i === 0 ? "Out" : "In"}</th>}
                   {last && <th className={`${cell} font-medium`}>Total</th>}
@@ -98,7 +106,15 @@ export function HoleAverageScorecard({ holes }: { holes: HoleStat[] }) {
 
 // How each hole of a layout plays for the field: average, scoring rates and a
 // difficulty rank (1 = hardest relative to par).
-export function HoleDifficultyTable({ holes, unit }: { holes: HoleStat[]; unit: string }) {
+export function HoleDifficultyTable({
+  holes,
+  unit,
+  holeHref,
+}: {
+  holes: HoleStat[];
+  unit: string;
+  holeHref: (hole: number) => string;
+}) {
   if (!holes.some((h) => h.rounds > 0)) {
     return <p className="text-sm text-zinc-500">No hole-by-hole scores for this layout yet.</p>;
   }
@@ -124,7 +140,11 @@ export function HoleDifficultyTable({ holes, unit }: { holes: HoleStat[]; unit: 
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
           {holes.map((h) => (
             <tr key={h.hole}>
-              <td className="px-3 py-2 font-medium">{h.label}</td>
+              <td className="px-3 py-2 font-medium">
+                <Link href={holeHref(h.hole)} className="hover:underline">
+                  {h.label}
+                </Link>
+              </td>
               <td className="px-3 py-2 text-right">{h.par ?? "—"}</td>
               {hasLength && <td className="px-3 py-2 text-right">{h.length ?? "—"}</td>}
               <td className="px-3 py-2 text-right">{h.avg?.toFixed(2) ?? "—"}</td>

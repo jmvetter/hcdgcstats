@@ -41,6 +41,7 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
   };
 
   const unit = layout.units === "Meters" ? "m" : "ft";
+  const holeHref = (hole: number) => `/layouts/${layout.id}/holes/${hole}${showAll ? "?all=1" : ""}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -66,9 +67,10 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
           <h2 className="text-lg font-semibold">Scoring average by hole</h2>
           <p className="-mt-2 text-sm text-zinc-500">
             Average strokes on each hole for {showAll ? "everyone" : "club members"}, over{" "}
-            {Math.max(...holes.map((h) => h.rounds))} rounds. Blue holes play under par, red over.
+            {Math.max(...holes.map((h) => h.rounds))} rounds. Blue holes play under par, red over. Click a
+            hole to see every player&apos;s scores on it.
           </p>
-          <HoleAverageScorecard holes={holes} />
+          <HoleAverageScorecard holes={holes} holeHref={holeHref} />
         </section>
       )}
 
@@ -144,7 +146,7 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
             How each hole plays for {showAll ? "everyone" : "club members"} on this layout. Difficulty ranks holes by
             average score relative to par (1 = hardest).
           </p>
-          <HoleDifficultyTable holes={holes} unit={unit} />
+          <HoleDifficultyTable holes={holes} unit={unit} holeHref={holeHref} />
         </section>
       )}
     </div>
