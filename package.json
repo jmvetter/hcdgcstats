@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "import:pdga": "tsx --conditions=react-server scripts/import-pdga.ts"
+    "import:pdga": "tsx --conditions=react-server scripts/import-pdga.ts",
+    "merge:layouts": "tsx --conditions=react-server scripts/merge-layouts.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

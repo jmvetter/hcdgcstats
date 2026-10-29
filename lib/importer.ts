@@ -1,7 +1,7 @@
 import "server-only";
 import { db, slugify, transaction } from "./db";
 import type { EventType } from "./data";
-import { mergeWeeklyLayouts, upsertLayout, type LayoutInput } from "./layouts";
+import { mergeDuplicateLayouts, upsertLayout, type LayoutInput } from "./layouts";
 
 // One player's round, on the layout they played.
 export type RoundInput = {
@@ -176,7 +176,7 @@ export function saveEventImport(
       }
       saved++;
     }
-    mergeWeeklyLayouts();
+    mergeDuplicateLayouts();
     return { eventId, results: saved, rounds: roundCount, newPlayers, skipped: rows.length - saved };
   });
 }

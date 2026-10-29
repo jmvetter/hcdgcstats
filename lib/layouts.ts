@@ -79,12 +79,13 @@ export function findLayout(id: string): { id: string; course: string } | undefin
     | undefined;
 }
 
-// PDGA leagues often get a new layout every week ("Fort Blues Week 2",
-// "Fort Blues Week 5"), even when nothing changed, which would split players'
-// rounds across one-round layouts. This merges layouts that are truly the same:
-// same course, same name apart from the week, and the same par and length on
-// every hole. Weeks that really differed stay separate and are renamed by par
-// and length so they can be told apart. Safe to run repeatedly.
+// PDGA creates a new layout for every event, and leagues often get one every
+// week ("Fort Blues Week 2", "Fort Blues Week 5"), even when nothing changed.
+// That would split players' rounds across many small layouts. This merges
+// layouts that are truly the same: same course, same name (ignoring any "Week N"
+// suffix), and the same par and length on every hole. Layouts that really differ
+// stay separate and are renamed by par and length so they can be told apart.
+// Safe to run repeatedly.
 const WEEK_SUFFIX = /[\s\-–—:(]*\b(?:week|wk|round|rd)\s*#?\s*\d+\)?\s*$/i;
 
 type LayoutRow = {
@@ -98,20 +99,19 @@ type LayoutRow = {
   hole_details: string | null;
 };
 
-export function mergeWeeklyLayouts() {
+export function mergeDuplicateLayouts() {
   const rows = db
     .prepare(
       `SELECT id, course, COALESCE(source_name, name) AS source_name, holes, par, length, units, hole_details
        FROM layouts ORDER BY rowid`,
     )
     .all() as LayoutRow[];
-  const weekly = rows.filter((r) => WEEK_SUFFIX.test(r.source_name));
 
   // Group identical layouts; the first imported one survives.
   const identical = new Map<string, LayoutRow[]>();
-  for (const r of weekly) {
+  for (const r of rows) {
     const holes: HoleDetail[] = r.hole_details ? JSON.parse(r.hole_details) : [];
-    // Without per-hole detail there's no way to be sure two weeks match, so each stays on its own.
+    // Without per-hole detail there's no way to be sure two layouts match, so each stays on its own.
     const holeKey = holes.length ? holes.map((h) => `${h.par}/${h.length}`).join(",") : `id:${r.id}`;
     const key = [r.course.toLowerCase(), baseName(r).toLowerCase(), r.holes, holeKey].join("|");
     identical.set(key, [...(identical.get(key) ?? []), r]);
