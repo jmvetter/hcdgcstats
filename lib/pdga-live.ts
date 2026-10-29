@@ -8,8 +8,9 @@ import { pdgaLayoutKey, type LayoutInput } from "./layouts";
 // change; the import page previews everything before saving.
 const LIVE = "https://www.pdga.com/apps/tournament/live-api";
 
-// PDGA uses 999 as a score for a player who didn't finish.
-const DNF_SCORE = 999;
+// PDGA's codes for a player who didn't finish: 888 (dropped out to protect their
+// rating) and 999 (any other reason). Any score at or above this isn't real.
+const DNF_SCORE = 888;
 
 type LiveDivision = { Division: string; LatestRound: number; Players: number };
 
@@ -33,6 +34,7 @@ type LiveScore = {
   GrandTotal: number | null;
   ToPar: number | null;
   Completed: number;
+  Played: number | null; // holes played this round
   LayoutID: number | null;
   Holes: number | null;
   RoundScore: number | null;
@@ -128,6 +130,9 @@ function toLayout(l: LiveLayout, fallbackCourse: string | null): LayoutInput {
 function toRound(round: number, date: string | null, s: LiveScore): RoundInput | null {
   if (!s.RoundScore || s.RoundScore >= DNF_SCORE) return null;
   const holes = s.Holes ?? 18;
+  // PDGA can mark a partial round "completed" (e.g. 7 of 18 holes, scored 24).
+  // Only full rounds count; a partial one would rank first for the week.
+  if (s.Played !== null && s.Played !== undefined && s.Played < holes) return null;
   const holeScores = (s.Scores ?? "")
     .split(",")
     .slice(0, holes)
