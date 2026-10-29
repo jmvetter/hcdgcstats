@@ -68,7 +68,10 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
   const divisions = await getDivisions();
   const division = typeof query.division === "string" && divisions.includes(query.division) ? query.division : undefined;
 
-  const players = await getPlayers({ membersOnly: !showAll });
+  // Doubles lists team entries, which are never club members; everything else
+  // lists individual players.
+  const doubles = type === "Doubles";
+  const players = await getPlayers(doubles ? { teams: "only" } : { membersOnly: !showAll });
   const mainDivisions = await getMainDivisions({ type });
   const allRows = await Promise.all(
     players.map(async (player) => ({
@@ -106,7 +109,9 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{showAll ? "All players" : "Club members"}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {doubles ? "Doubles teams" : showAll ? "All players" : "Club members"}
+        </h1>
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <DivisionFilter
             value={division ?? ""}
@@ -116,9 +121,11 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
             ]}
           />
           <TypeFilter type={type} href={(t) => href({ type: t })} />
-          <Link href={href({ all: !showAll })} className="text-zinc-500 hover:underline">
-            {showAll ? "Show club members only" : "Show all players"}
-          </Link>
+          {!doubles && (
+            <Link href={href({ all: !showAll })} className="text-zinc-500 hover:underline">
+              {showAll ? "Show club members only" : "Show all players"}
+            </Link>
+          )}
         </div>
       </div>
       <p className="-mt-3 text-sm text-zinc-500">
@@ -129,7 +136,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
         <p className="text-zinc-500">
           {filtered ? (
             <>
-              No {showAll ? "players" : "club members"} with {type ? `${type.toLowerCase()} ` : ""}finishes
+              No {doubles ? "teams" : showAll ? "players" : "club members"} with {type ? `${type.toLowerCase()} ` : ""}finishes
               {division ? ` in ${division}` : ""}.
             </>
           ) : (

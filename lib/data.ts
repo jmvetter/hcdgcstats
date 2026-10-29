@@ -19,9 +19,12 @@ export type Player = {
   membershipStatus: string | null;
   pdgaUpdatedAt: string | null;
   member: boolean;
+  team: boolean; // a doubles team entry rather than an individual
 };
 
-export type EventType = "League" | "Tournament";
+// League: every round counts as a finish. Tournament and Doubles: the final
+// place counts. Doubles entries are teams, kept apart from individual players.
+export type EventType = "League" | "Tournament" | "Doubles";
 
 export type ClubEvent = {
   id: string;
@@ -67,6 +70,7 @@ type PlayerRow = {
   membership_status: string | null;
   pdga_updated_at: string | null;
   member: number;
+  team: number;
 };
 
 function toPlayer(r: PlayerRow): Player {
@@ -84,13 +88,23 @@ function toPlayer(r: PlayerRow): Player {
     membershipStatus: r.membership_status,
     pdgaUpdatedAt: r.pdga_updated_at,
     member: r.member === 1,
+    team: r.team === 1,
   };
 }
 
-export async function getPlayers({ membersOnly = false } = {}): Promise<Player[]> {
+// Individual players by default; doubles team entries only when asked for.
+export async function getPlayers({
+  membersOnly = false,
+  teams = "exclude",
+}: { membersOnly?: boolean; teams?: "exclude" | "only" | "include" } = {}): Promise<Player[]> {
   await connection();
+  const where = [
+    membersOnly && "member = 1",
+    teams === "exclude" && "team = 0",
+    teams === "only" && "team = 1",
+  ].filter(Boolean);
   const rows = db
-    .prepare(`SELECT * FROM players ${membersOnly ? "WHERE member = 1" : ""} ORDER BY name COLLATE NOCASE`)
+    .prepare(`SELECT * FROM players ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY name COLLATE NOCASE`)
     .all();
   return (rows as PlayerRow[]).map(toPlayer);
 }
@@ -142,7 +156,8 @@ const toEvent = (r: EventCols): ClubEvent => ({
 });
 
 // A player's finishes, newest first. Leagues count each round as a finish,
-// placed within that round's division; tournaments count their final place.
+// placed within that round's division; tournaments and doubles count their
+// final place.
 // League events imported before round places were stored fall back to the
 // overall result.
 export async function getPlayerFinishes(playerId: string, filter: FinishFilter = {}): Promise<Finish[]> {
@@ -155,7 +170,7 @@ export async function getPlayerFinishes(playerId: string, filter: FinishFilter =
               e.name, e.date AS event_date, e.course, e.type, e.par
        FROM results r JOIN events e ON e.id = r.event_id
        WHERE r.player_id = ? ${resultsFilter.sql}
-         AND (e.type = 'Tournament' OR NOT EXISTS (
+         AND (e.type <> 'League' OR NOT EXISTS (
            SELECT 1 FROM rounds rd
            WHERE rd.player_id = r.player_id AND rd.event_id = r.event_id AND rd.place IS NOT NULL))`,
     )
@@ -258,7 +273,13 @@ export async function getDivisions(): Promise<string[]> {
 
 // Reads the ?type= filter shared by the players list and profiles.
 export function parseTypeFilter(value: string | string[] | undefined): EventType | undefined {
-  return value === "league" ? "League" : value === "tournament" ? "Tournament" : undefined;
+  return value === "league"
+    ? "League"
+    : value === "tournament"
+      ? "Tournament"
+      : value === "doubles"
+        ? "Doubles"
+        : undefined;
 }
 
 export type Layout = {
@@ -308,7 +329,8 @@ export async function getLayouts(): Promise<LayoutSummary[]> {
       `SELECT l.*, COUNT(r.score) AS rounds, COUNT(DISTINCT r.player_id) AS players,
               COUNT(DISTINCT CASE WHEN p.member = 1 THEN r.player_id END) AS members
        FROM layouts l
-       LEFT JOIN rounds r ON r.layout_id = l.id
+       -- Doubles team rounds aren't comparable with individual rounds.
+       LEFT JOIN rounds r ON r.layout_id = l.id AND r.player_id NOT IN (SELECT id FROM players WHERE team = 1)
        LEFT JOIN players p ON p.id = r.player_id
        GROUP BY l.id
        ORDER BY l.course COLLATE NOCASE, l.name COLLATE NOCASE`,
@@ -351,7 +373,7 @@ function layoutLeaderboard(layoutId: string, membersOnly: boolean, minRounds: nu
       `SELECT p.id, p.name, p.pdga_number, p.member, COUNT(*) AS rounds, AVG(r.score) AS avg_score,
               AVG(r.to_par) AS avg_to_par, MIN(r.score) AS best
        FROM rounds r JOIN players p ON p.id = r.player_id
-       WHERE r.layout_id = ? ${membersOnly ? "AND p.member = 1" : ""}
+       WHERE r.layout_id = ? AND p.team = 0 ${membersOnly ? "AND p.member = 1" : ""}
        GROUP BY p.id
        HAVING COUNT(*) >= ?
        ORDER BY avg_score, best, p.name COLLATE NOCASE`,
@@ -555,7 +577,7 @@ export async function getLayoutHoleStats(layoutId: string, { membersOnly = false
        FROM rounds rd
        JOIN layouts l ON l.id = rd.layout_id
        JOIN players p ON p.id = rd.player_id
-       WHERE rd.layout_id = ? AND rd.hole_scores IS NOT NULL ${membersOnly ? "AND p.member = 1" : ""}`,
+       WHERE rd.layout_id = ? AND rd.hole_scores IS NOT NULL AND p.team = 0 ${membersOnly ? "AND p.member = 1" : ""}`,
     )
     .all(layoutId) as HoleRound[];
   return holeStats(layoutId, rows);

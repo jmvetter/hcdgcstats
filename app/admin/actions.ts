@@ -66,11 +66,16 @@ const optionalInt = (v: FormDataEntryValue | null) => {
   return /^\d+$/.test(s) ? Number(s) : null;
 };
 
+function readEventType(formData: FormData, fallback: EventType): EventType {
+  const t = formData.get("type");
+  return t === "League" || t === "Tournament" || t === "Doubles" ? t : fallback;
+}
+
 export async function importUdiscAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
   await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const date = String(formData.get("date") ?? "");
-  const type = formData.get("type") === "Tournament" ? "Tournament" : ("League" as EventType);
+  const type = readEventType(formData, "League");
   if (!name) return { error: "Event name is required." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Event date is required." };
 
@@ -98,7 +103,9 @@ export async function importUdiscAction(_prev: ImportState, formData: FormData):
   }
   for (const row of rows) for (const r of row.rounds) r.layoutId = layoutId;
 
-  const summary = saveEventImport({ name, date, course, type }, rows, { markMembers: true });
+  // Club events make everyone a member, except doubles, whose entries are teams.
+  const doubles = type === "Doubles";
+  const summary = saveEventImport({ name, date, course, type }, rows, { markMembers: !doubles, teams: doubles });
   revalidatePath("/", "layout");
   return { summary };
 }
@@ -154,10 +161,14 @@ export async function importPdgaTournamentAction(
       name,
       date,
       course,
-      type: formData.get("type") === "League" ? "League" : "Tournament",
+      type: readEventType(formData, "Tournament"),
     },
     rows,
-    { membersOnly: formData.get("membersOnly") === "on", markMembers: false },
+    {
+      membersOnly: formData.get("membersOnly") === "on" && readEventType(formData, "Tournament") !== "Doubles",
+      markMembers: false,
+      teams: readEventType(formData, "Tournament") === "Doubles",
+    },
     layouts,
   );
   revalidatePath("/", "layout");
@@ -252,7 +263,7 @@ export async function deletePlayerAction(formData: FormData): Promise<void> {
 export async function setEventTypeAction(formData: FormData): Promise<void> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  const type = formData.get("type") === "League" ? "League" : "Tournament";
+  const type = readEventType(formData, "Tournament");
   if (id) setEventType(id, type);
   revalidatePath("/", "layout");
 }

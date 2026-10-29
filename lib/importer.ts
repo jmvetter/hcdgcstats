@@ -42,6 +42,10 @@ export type ImportOptions = {
   // leagues); false for outside PDGA tournaments, where new players are added
   // as non-members and existing players keep their status.
   markMembers?: boolean;
+  // Doubles: every entry is a team ("Mac Zambrano & Kevin Cheney", or a solo
+  // name), matched only against other team entries and never against
+  // individual players, so it doesn't touch anyone's personal stats.
+  teams?: boolean;
 };
 
 export type ImportSummary = {
@@ -54,16 +58,22 @@ export type ImportSummary = {
 
 type FoundPlayer = { id: string; pdga_number: number | null; member: number };
 
-// Finds a player by PDGA number first, then by exact name.
-function findPlayer(row: Pick<ImportRow, "name" | "pdgaNumber">): FoundPlayer | undefined {
+// Finds a player by PDGA number first, then by exact name. Team entries and
+// individuals are matched separately.
+function findPlayer(row: Pick<ImportRow, "name" | "pdgaNumber">, teams = false): FoundPlayer | undefined {
+  if (teams) {
+    return db
+      .prepare("SELECT id, pdga_number, member FROM players WHERE team = 1 AND name = ? COLLATE NOCASE")
+      .get(row.name) as FoundPlayer | undefined;
+  }
   if (row.pdgaNumber !== null) {
     const byPdga = db
-      .prepare("SELECT id, pdga_number, member FROM players WHERE pdga_number = ?")
+      .prepare("SELECT id, pdga_number, member FROM players WHERE team = 0 AND pdga_number = ?")
       .get(row.pdgaNumber);
     if (byPdga) return byPdga as FoundPlayer;
   }
   return db
-    .prepare("SELECT id, pdga_number, member FROM players WHERE name = ? COLLATE NOCASE")
+    .prepare("SELECT id, pdga_number, member FROM players WHERE team = 0 AND name = ? COLLATE NOCASE")
     .get(row.name) as FoundPlayer | undefined;
 }
 
@@ -88,7 +98,7 @@ export function saveEventImport(
 
   const idTaken = db.prepare("SELECT 1 FROM players WHERE id = ?");
   const insertPlayer = db.prepare(
-    "INSERT INTO players (id, name, pdga_number, division, joined, member) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO players (id, name, pdga_number, division, joined, member, team) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
   const setPdga = db.prepare("UPDATE players SET pdga_number = ? WHERE id = ?");
   const setMember = db.prepare("UPDATE players SET member = 1 WHERE id = ?");
@@ -137,10 +147,10 @@ export function saveEventImport(
     let saved = 0;
     let roundCount = 0;
     for (const row of rows) {
-      const existing = findPlayer(row);
+      const existing = findPlayer(row, options.teams);
       if (options.membersOnly && existing?.member !== 1) continue;
       let playerId = existing?.id;
-      if (existing && existing.pdga_number === null && row.pdgaNumber !== null) {
+      if (existing && !options.teams && existing.pdga_number === null && row.pdgaNumber !== null) {
         setPdga.run(row.pdgaNumber, existing.id);
       }
       if (existing && options.markMembers && existing.member !== 1) setMember.run(existing.id);
@@ -151,10 +161,13 @@ export function saveEventImport(
         insertPlayer.run(
           playerId,
           row.name,
-          row.pdgaNumber,
+          // A team's PDGA number would belong to one of its players, and
+          // PDGA numbers are unique to individual players.
+          options.teams ? null : row.pdgaNumber,
           row.division,
           event.date,
-          options.markMembers ? 1 : 0,
+          options.markMembers && !options.teams ? 1 : 0,
+          options.teams ? 1 : 0,
         );
         newPlayers.push(row.name);
       }

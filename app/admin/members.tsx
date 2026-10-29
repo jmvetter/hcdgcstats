@@ -107,6 +107,7 @@ function PlayerRow({ player }: { player: Player }) {
           <input type="hidden" name="id" value={player.id} />
         </form>
         <input form={formId} name="name" defaultValue={player.name} required className={smallInput} />
+        {player.team && <p className="mt-1 text-xs text-zinc-500">Doubles team</p>}
         {state.error && <p className="mt-1 text-xs text-red-600">{state.error}</p>}
       </td>
       <td className="px-3 py-2">

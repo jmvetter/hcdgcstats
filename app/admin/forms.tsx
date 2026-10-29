@@ -74,8 +74,9 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
         <div className="flex flex-col gap-4">
           <div className="text-sm">
             <p className="font-medium">
-              {preview.fileName}: {parsed.rows.length} players
+              {preview.fileName}: {parsed.rows.length} entries
               {parsed.roundCount > 1 && `, ${parsed.roundCount} rounds`}
+              {parsed.holeCount && `, ${parsed.holeCount} holes`}
             </p>
             <p className="text-zinc-600 dark:text-zinc-400">
               Columns used:{" "}
@@ -83,6 +84,11 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
                 .map((f) => `${FIELD_LABELS[f]} ← ${parsed.mapping[f] ?? "not found"}`)
                 .join(" · ")}
             </p>
+            {parsed.sheets.length > 1 && (
+              <p className="text-zinc-600 dark:text-zinc-400">
+                Sheets read: {parsed.sheets.map((sh) => `${sh.name} (${sh.entries})`).join(" · ")}
+              </p>
+            )}
             {parsed.warnings.map((w) => (
               <p key={w} className="text-amber-700 dark:text-amber-400">
                 {w}
@@ -107,9 +113,10 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
               <select name="type" className={input}>
                 <option value="League">League (each round counts as a finish)</option>
                 <option value="Tournament">Tournament (final place counts)</option>
+                <option value="Doubles">Doubles (entries are teams, kept apart from players)</option>
               </select>
             </label>
-            <LayoutPicker layouts={layouts} parGuess={parGuess(parsed.rows)} />
+            <LayoutPicker layouts={layouts} parGuess={parGuess(parsed.rows)} holes={parsed.holeCount} />
             <button disabled={importing || parsed.rows.length === 0} className={`${button} justify-self-start`}>
               {importing ? "Importing…" : `Import ${parsed.rows.length} results`}
             </button>
@@ -192,6 +199,7 @@ export function PdgaTournamentImport() {
               <select name="type" defaultValue={t.type} className={input}>
                 <option value="Tournament">Tournament (final place counts)</option>
                 <option value="League">League (each round counts as a finish)</option>
+                <option value="Doubles">Doubles (entries are teams, kept apart from players)</option>
               </select>
             </label>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
@@ -296,7 +304,15 @@ function parGuess(rows: ImportRow[]): number | null {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
-function LayoutPicker({ layouts, parGuess }: { layouts: LayoutSummary[]; parGuess: number | null }) {
+function LayoutPicker({
+  layouts,
+  parGuess,
+  holes,
+}: {
+  layouts: LayoutSummary[];
+  parGuess: number | null;
+  holes: number | null;
+}) {
   const [choice, setChoice] = useState(layouts.length ? layouts[0].id : "new");
   return (
     <div className="flex flex-col gap-3 sm:col-span-2">
@@ -324,7 +340,7 @@ function LayoutPicker({ layouts, parGuess }: { layouts: LayoutSummary[]; parGues
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Holes
-            <input name="layoutHoles" inputMode="numeric" defaultValue="18" className={input} />
+            <input name="layoutHoles" inputMode="numeric" defaultValue={holes ?? 18} className={input} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Par

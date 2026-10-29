@@ -34,7 +34,7 @@ export default async function AdminPage() {
     );
   }
 
-  const [players, layouts, events] = await Promise.all([getPlayers(), getLayouts(), getEvents()]);
+  const [players, layouts, events] = await Promise.all([getPlayers({ teams: "include" }), getLayouts(), getEvents()]);
 
   return (
     <div className="flex flex-col gap-10">

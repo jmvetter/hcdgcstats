@@ -36,6 +36,7 @@ export function EventList({ events }: { events: ClubEvent[] }) {
                   >
                     <option value="League">League</option>
                     <option value="Tournament">Tournament</option>
+                    <option value="Doubles">Doubles</option>
                   </select>
                 </form>
               </td>

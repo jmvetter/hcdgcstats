@@ -8,6 +8,7 @@ export function TypeFilter({ type, href }: { type?: EventType; href: (t: EventTy
     [null, "All"],
     ["League", "Leagues"],
     ["Tournament", "Tournaments"],
+    ["Doubles", "Doubles"],
   ];
   return (
     <nav aria-label="Event type" className="inline-flex rounded-full border border-zinc-200 p-0.5 dark:border-zinc-800">

@@ -94,6 +94,8 @@ function migrate(db: DatabaseSync) {
     db.exec("ALTER TABLE players ADD COLUMN member INTEGER NOT NULL DEFAULT 0");
     db.exec("UPDATE players SET member = 1");
   }
+  // Team entries from doubles events, kept apart from individual players.
+  if (!cols.includes("team")) db.exec("ALTER TABLE players ADD COLUMN team INTEGER NOT NULL DEFAULT 0");
   const roundCols = (db.prepare("PRAGMA table_info(rounds)").all() as { name: string }[]).map((c) => c.name);
   // Place within the round's division, so each week of a league counts as a finish.
   // Rounds imported before this column existed get one when their event is re-imported.
