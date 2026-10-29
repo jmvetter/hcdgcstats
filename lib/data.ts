@@ -584,3 +584,37 @@ export async function getPlayerHoleStats(playerId: string): Promise<{ layout: La
   }
   return out.sort((a, b) => (b.holes[0]?.rounds ?? 0) - (a.holes[0]?.rounds ?? 0));
 }
+
+// Each player's main division: the one they've played the most rounds in, with
+// ties going to the more recent. Results imported without round data count as
+// one round. Follows the type filter, so it can be a player's main league or
+// tournament division.
+export async function getMainDivisions(filter: Pick<FinishFilter, "type"> = {}): Promise<Map<string, string>> {
+  await connection();
+  const typeSql = filter.type ? "AND e.type = ?" : "";
+  const args = filter.type ? [filter.type, filter.type] : [];
+  const rows = db
+    .prepare(
+      `SELECT player_id, division, COUNT(*) AS rounds, MAX(played) AS last_played FROM (
+         SELECT rd.player_id, res.division, COALESCE(rd.date, e.date) AS played
+         FROM rounds rd
+         JOIN results res ON res.player_id = rd.player_id AND res.event_id = rd.event_id
+         JOIN events e ON e.id = rd.event_id
+         WHERE 1 = 1 ${typeSql}
+         UNION ALL
+         SELECT r.player_id, r.division, e.date AS played
+         FROM results r JOIN events e ON e.id = r.event_id
+         WHERE NOT EXISTS (SELECT 1 FROM rounds rd WHERE rd.player_id = r.player_id AND rd.event_id = r.event_id)
+           ${typeSql}
+       )
+       WHERE division IS NOT NULL
+       GROUP BY player_id, division
+       ORDER BY player_id, rounds DESC, last_played DESC`,
+    )
+    .all(...args) as { player_id: string; division: string }[];
+
+  // Rows come sorted best-first within each player, so the first one wins.
+  const main = new Map<string, string>();
+  for (const r of rows) if (!main.has(r.player_id)) main.set(r.player_id, r.division);
+  return main;
+}

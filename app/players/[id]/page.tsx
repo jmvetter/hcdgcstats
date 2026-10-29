@@ -7,6 +7,7 @@ import { TypeFilter } from "@/app/components/type-filter";
 import {
   computeStats,
   getLayoutHoleStats,
+  getMainDivisions,
   getPlayer,
   getPlayerFinishes,
   getPlayerHoleStats,
@@ -31,12 +32,13 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
   const player = await getPlayer(id);
   if (!player) notFound();
 
-  const [finishes, layouts, ratings, scoring, holeStats] = await Promise.all([
+  const [finishes, layouts, ratings, scoring, holeStats, mainDivisions] = await Promise.all([
     getPlayerFinishes(player.id, { type }),
     getPlayerLayouts(player.id),
     getPlayerRoundRatings(player.id, { type }),
     getPlayerScoring(player.id, { type }),
     getPlayerHoleStats(player.id),
+    getMainDivisions(),
   ]);
   // The field's average on each hole, to compare the player against.
   const fieldHoles = new Map(
@@ -59,7 +61,8 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
           {[
-            player.division,
+            // The division they've played the most rounds in, as on the players grid.
+            mainDivisions.get(player.id) ?? player.division,
             player.pdgaNumber && `PDGA #${player.pdgaNumber}`,
             location,
             `Member since ${formatDate(player.joined)}`,

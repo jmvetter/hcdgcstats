@@ -5,6 +5,7 @@ import { PdgaLink } from "@/app/components/pdga-link";
 import { TypeFilter } from "@/app/components/type-filter";
 import {
   getDivisions,
+  getMainDivisions,
   getPlayerStats,
   getPlayers,
   parseTypeFilter,
@@ -18,14 +19,16 @@ export const metadata: Metadata = {
   title: "Players",
 };
 
-type Row = { player: Player; stats: PlayerStats };
+// `division` is what the Division column shows: the filtered division if one is
+// selected, otherwise the division the player has played the most rounds in.
+type Row = { player: Player; stats: PlayerStats; division: string | null };
 type Dir = "asc" | "desc";
 
 // Each sortable column: how to read its value, and which direction a first
 // click sorts in (best first: low places, high ratings and counts).
 const COLUMNS = {
   name: { label: "Player", align: "left", firstDir: "asc", value: (r: Row) => r.player.name.toLowerCase() },
-  division: { label: "Division", align: "left", firstDir: "asc", value: (r: Row) => r.player.division },
+  division: { label: "Division", align: "left", firstDir: "asc", value: (r: Row) => r.division },
   rating: { label: "Rating", align: "right", firstDir: "desc", value: (r: Row) => r.player.rating },
   finishes: { label: "Finishes", align: "right", firstDir: "desc", value: (r: Row) => r.stats.finishes },
   wins: { label: "Wins", align: "right", firstDir: "desc", value: (r: Row) => r.stats.wins },
@@ -66,8 +69,13 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
   const division = typeof query.division === "string" && divisions.includes(query.division) ? query.division : undefined;
 
   const players = await getPlayers({ membersOnly: !showAll });
+  const mainDivisions = await getMainDivisions({ type });
   const allRows = await Promise.all(
-    players.map(async (player) => ({ player, stats: await getPlayerStats(player.id, { type, division }) })),
+    players.map(async (player) => ({
+      player,
+      stats: await getPlayerStats(player.id, { type, division }),
+      division: division ?? mainDivisions.get(player.id) ?? player.division,
+    })),
   );
   const filtered = Boolean(division || type);
   const rows = sortRows(filtered ? allRows.filter((r) => r.stats.finishes > 0) : allRows, sort, dir);
@@ -165,7 +173,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-              {rows.map(({ player, stats }) => (
+              {rows.map(({ player, stats, division: rowDivision }) => (
                 <tr key={player.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900">
                   <td className="px-4 py-3">
                     <Link href={`/players/${player.id}`} className="font-medium hover:underline">
@@ -173,7 +181,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
                     </Link>
                     <PdgaLink href={pdgaPlayerUrl(player.pdgaNumber)} label={player.name} />
                   </td>
-                  <td className="px-4 py-3">{division ?? player.division ?? "—"}</td>
+                  <td className="px-4 py-3">{rowDivision ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{player.rating ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{stats.finishes}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{stats.wins}</td>
