@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getEvents, getPlayers } from "@/lib/data";
 import { formatDate } from "@/lib/format";
@@ -8,11 +9,23 @@ export default async function Home() {
 
   return (
     <div className="flex flex-col gap-10">
-      <section className="flex flex-col gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">HCDGC Stats</h1>
-        <p className="max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
-          Player performance at HCDGC league events and tournaments.
-        </p>
+      <section className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+        {/* White artwork on transparent; inverted to black in light mode. */}
+        <Image
+          src="/logos/hcdgc-shield.png"
+          alt="HCDGC club shield"
+          width={769}
+          height={869}
+          priority
+          unoptimized
+          className="h-32 w-auto shrink-0 invert dark:invert-0"
+        />
+        <div className="flex flex-col gap-4">
+          <h1 className="text-3xl font-semibold tracking-tight">HCDGC Stats</h1>
+          <p className="max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
+            Player performance at HCDGC league events and tournaments.
+          </p>
+        </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-3">
