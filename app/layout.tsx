@@ -67,6 +67,42 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
           {children}
         </main>
+        {/* PDGA requires this credit, with a link to pdga.com, on every screen showing its
+            data. Official logo files, unaltered: blue on light backgrounds, white on dark. */}
+        <footer className="border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-6 text-sm text-zinc-600 dark:text-zinc-400">
+            <a href="https://www.pdga.com/" target="_blank" rel="noopener noreferrer" className="p-1">
+              <Image
+                src="/logos/pdga/pdga-logo-blue.svg"
+                alt="PDGA"
+                width={461}
+                height={114}
+                unoptimized
+                className="h-6 w-auto dark:hidden"
+              />
+              <Image
+                src="/logos/pdga/pdga-logo-white.svg"
+                alt="PDGA"
+                width={461}
+                height={114}
+                unoptimized
+                className="hidden h-6 w-auto dark:block"
+              />
+            </a>
+            <p>
+              Player, event, and course data provided by{" "}
+              <a
+                href="https://www.pdga.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[#003462] hover:underline dark:text-[#009E91]"
+              >
+                PDGA
+              </a>
+              .
+            </p>
+          </div>
+        </footer>
       </body>
     </html>
   );

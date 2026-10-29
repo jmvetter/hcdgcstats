@@ -327,6 +327,7 @@ export type LayoutStanding = {
   rank: number;
   playerId: string;
   name: string;
+  pdgaNumber: number | null;
   member: boolean;
   rounds: number;
   avgScore: number;
@@ -347,7 +348,7 @@ export async function getLayoutLeaderboard(
 function layoutLeaderboard(layoutId: string, membersOnly: boolean, minRounds: number): LayoutStanding[] {
   const rows = db
     .prepare(
-      `SELECT p.id, p.name, p.member, COUNT(*) AS rounds, AVG(r.score) AS avg_score,
+      `SELECT p.id, p.name, p.pdga_number, p.member, COUNT(*) AS rounds, AVG(r.score) AS avg_score,
               AVG(r.to_par) AS avg_to_par, MIN(r.score) AS best
        FROM rounds r JOIN players p ON p.id = r.player_id
        WHERE r.layout_id = ? ${membersOnly ? "AND p.member = 1" : ""}
@@ -358,6 +359,7 @@ function layoutLeaderboard(layoutId: string, membersOnly: boolean, minRounds: nu
     .all(layoutId, minRounds) as {
     id: string;
     name: string;
+    pdga_number: number | null;
     member: number;
     rounds: number;
     avg_score: number;
@@ -375,6 +377,7 @@ function layoutLeaderboard(layoutId: string, membersOnly: boolean, minRounds: nu
       rank,
       playerId: r.id,
       name: r.name,
+      pdgaNumber: r.pdga_number,
       member: r.member === 1,
       rounds: r.rounds,
       avgScore: r.avg_score,

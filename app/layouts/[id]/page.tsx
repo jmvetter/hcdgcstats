@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getLayout, getLayoutLeaderboard } from "@/lib/data";
-import { formatToPar } from "@/lib/format";
+import { PdgaLink } from "@/app/components/pdga-link";
+import { formatToPar, pdgaPlayerUrl } from "@/lib/format";
 
 export async function generateMetadata({
   params,
@@ -106,6 +107,7 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/l
                       <Link href={`/players/${s.playerId}`} className="font-medium hover:underline">
                         {s.name}
                       </Link>
+                      <PdgaLink href={pdgaPlayerUrl(s.pdgaNumber)} label={s.name} />
                       {showAll && !s.member && <span className="ml-2 text-xs text-zinc-500">non-member</span>}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">{s.rounds}</td>

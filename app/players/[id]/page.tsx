@@ -10,7 +10,8 @@ import {
   getPlayerRoundRatings,
   parseTypeFilter,
 } from "@/lib/data";
-import { formatDate, formatToPar } from "@/lib/format";
+import { PdgaLink } from "@/app/components/pdga-link";
+import { formatDate, formatToPar, pdgaEventUrl, pdgaPlayerUrl } from "@/lib/format";
 
 export async function generateMetadata({
   params,
@@ -39,7 +40,10 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         <Link href="/players" className="text-sm text-zinc-500 hover:underline">
           ← All players
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">{player.name}</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {player.name}
+          <PdgaLink href={pdgaPlayerUrl(player.pdgaNumber)} label={player.name} />
+        </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
           {[
             player.division,
@@ -140,6 +144,7 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
                     <td className="px-4 py-3">
                       {r.event.name}
                       {r.round !== null && <span className="text-zinc-500"> · Week {r.round}</span>}
+                      <PdgaLink href={pdgaEventUrl(r.eventId)} label={r.event.name} />
                     </td>
                     <td className="px-4 py-3">{r.event.type}</td>
                     <td className="px-4 py-3">{r.division ?? "—"}</td>

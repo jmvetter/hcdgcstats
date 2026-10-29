@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getEvents, getPlayers } from "@/lib/data";
-import { formatDate } from "@/lib/format";
+import { PdgaLink } from "@/app/components/pdga-link";
+import { formatDate, pdgaEventUrl } from "@/lib/format";
 
 export default async function Home() {
   const [players, events] = await Promise.all([getPlayers(), getEvents()]);
@@ -33,7 +34,16 @@ export default async function Home() {
         <StatCard label="Events tracked" value={events.length} />
         <StatCard
           label="Latest event"
-          value={latest ? latest.name : "—"}
+          value={
+            latest ? (
+              <>
+                {latest.name}
+                <PdgaLink href={pdgaEventUrl(latest.id)} label={latest.name} />
+              </>
+            ) : (
+              "—"
+            )
+          }
           sub={latest ? formatDate(latest.date) : undefined}
         />
       </section>
@@ -54,7 +64,7 @@ function StatCard({
   sub,
 }: {
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   sub?: string;
 }) {
   return (

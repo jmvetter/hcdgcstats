@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DivisionFilter } from "@/app/components/division-filter";
+import { PdgaLink } from "@/app/components/pdga-link";
 import { TypeFilter } from "@/app/components/type-filter";
 import {
   getDivisions,
@@ -11,6 +12,7 @@ import {
   type Player,
   type PlayerStats,
 } from "@/lib/data";
+import { pdgaPlayerUrl } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Players",
@@ -169,6 +171,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
                     <Link href={`/players/${player.id}`} className="font-medium hover:underline">
                       {player.name}
                     </Link>
+                    <PdgaLink href={pdgaPlayerUrl(player.pdgaNumber)} label={player.name} />
                   </td>
                   <td className="px-4 py-3">{division ?? player.division ?? "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{player.rating ?? "—"}</td>
