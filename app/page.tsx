@@ -38,7 +38,9 @@ export default async function Home() {
           value={
             latest ? (
               <>
-                {latest.name}
+                <Link href={`/events/${latest.id}`} className="hover:underline">
+                  {latest.name}
+                </Link>
                 <PdgaLink href={pdgaEventUrl(latest.id)} label={latest.name} />
               </>
             ) : (
@@ -55,6 +57,12 @@ export default async function Home() {
           className="rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
         >
           View players →
+        </Link>
+        <Link
+          href="/events"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Event results →
         </Link>
         {leagueYears[0] && (
           <Link

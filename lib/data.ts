@@ -724,3 +724,135 @@ export async function getMainDivisions(filter: Pick<FinishFilter, "type"> = {}):
   for (const r of rows) if (!main.has(r.player_id)) main.set(r.player_id, r.division);
   return main;
 }
+
+export type EventSummary = ClubEvent & {
+  players: number;
+  rounds: number;
+  firstDate: string;
+  lastDate: string;
+};
+
+// Every event, newest first, optionally limited to one type.
+export async function getEventSummaries({ type }: { type?: EventType } = {}): Promise<EventSummary[]> {
+  await connection();
+  const rows = db
+    .prepare(
+      `SELECT e.id, e.name, e.date, e.course, e.type, e.par,
+              (SELECT COUNT(*) FROM results r WHERE r.event_id = e.id) AS players,
+              (SELECT COUNT(DISTINCT round) FROM rounds rd WHERE rd.event_id = e.id) AS rounds,
+              (SELECT MIN(date) FROM rounds rd WHERE rd.event_id = e.id) AS first_date,
+              (SELECT MAX(date) FROM rounds rd WHERE rd.event_id = e.id) AS last_date
+       FROM events e
+       ${type ? "WHERE e.type = ?" : ""}
+       ORDER BY e.date DESC, e.name`,
+    )
+    .all(...(type ? [type] : [])) as (ClubEvent & {
+    players: number;
+    rounds: number;
+    first_date: string | null;
+    last_date: string | null;
+  })[];
+  return rows.map(({ first_date, last_date, ...r }) => ({
+    ...r,
+    firstDate: first_date ?? r.date,
+    lastDate: last_date ?? r.date,
+  }));
+}
+
+export async function getEvent(id: string): Promise<ClubEvent | undefined> {
+  await connection();
+  const row = db.prepare("SELECT id, name, date, course, type, par FROM events WHERE id = ?").get(id) as
+    | ClubEvent
+    | undefined;
+  return row ? { ...row } : undefined;
+}
+
+export type EventRound = {
+  round: number;
+  date: string | null;
+  score: number;
+  toPar: number | null;
+  rating: number | null;
+  place: number | null; // within the round's division
+  layoutId: string | null;
+  layoutName: string | null;
+  course: string | null;
+};
+
+export type EventEntry = {
+  playerId: string;
+  name: string;
+  pdgaNumber: number | null;
+  division: string | null;
+  place: number | null;
+  score: number | null;
+  toPar: number | null;
+  rounds: EventRound[];
+};
+
+// Everyone who played an event, with each of their rounds.
+export async function getEventEntries(eventId: string): Promise<EventEntry[]> {
+  await connection();
+  const entries = db
+    .prepare(
+      `SELECT r.player_id, p.name, p.pdga_number, r.division, r.place, r.score, r.to_par
+       FROM results r JOIN players p ON p.id = r.player_id
+       WHERE r.event_id = ?`,
+    )
+    .all(eventId) as {
+    player_id: string;
+    name: string;
+    pdga_number: number | null;
+    division: string | null;
+    place: number | null;
+    score: number | null;
+    to_par: number | null;
+  }[];
+  const rounds = db
+    .prepare(
+      `SELECT rd.player_id, rd.round, rd.date, rd.score, rd.to_par, rd.rating, rd.place, rd.layout_id,
+              l.name AS layout_name, l.course
+       FROM rounds rd LEFT JOIN layouts l ON l.id = rd.layout_id
+       WHERE rd.event_id = ?
+       ORDER BY rd.round`,
+    )
+    .all(eventId) as {
+    player_id: string;
+    round: number;
+    date: string | null;
+    score: number;
+    to_par: number | null;
+    rating: number | null;
+    place: number | null;
+    layout_id: string | null;
+    layout_name: string | null;
+    course: string | null;
+  }[];
+
+  const byPlayer = new Map<string, EventRound[]>();
+  for (const r of rounds) {
+    const list = byPlayer.get(r.player_id) ?? [];
+    list.push({
+      round: r.round,
+      date: r.date,
+      score: r.score,
+      toPar: r.to_par,
+      rating: r.rating,
+      place: r.place,
+      layoutId: r.layout_id,
+      layoutName: r.layout_name,
+      course: r.course,
+    });
+    byPlayer.set(r.player_id, list);
+  }
+  return entries.map((e) => ({
+    playerId: e.player_id,
+    name: e.name,
+    pdgaNumber: e.pdga_number,
+    division: e.division,
+    place: e.place,
+    score: e.score,
+    toPar: e.to_par,
+    rounds: byPlayer.get(e.player_id) ?? [],
+  }));
+}

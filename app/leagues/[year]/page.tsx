@@ -257,7 +257,9 @@ function SessionCard({ session: s, all }: { session: RecapSession; all: RecapSes
       <header className="flex flex-col gap-0.5 border-b border-zinc-200 pb-3 dark:border-zinc-800">
         <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">{plural(s.weeks, "week")}</span>
         <h3 className="text-xl font-black uppercase leading-tight">
-          {s.name}
+          <Link href={`/events/${s.eventId}`} className="hover:underline">
+            {s.name}
+          </Link>
           <PdgaLink href={pdgaEventUrl(s.eventId)} label={s.name} />
         </h3>
         <span className="text-sm text-zinc-500">

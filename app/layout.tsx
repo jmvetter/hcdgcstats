@@ -30,7 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-zinc-50 dark:bg-black">
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <nav className="mx-auto flex w-full max-w-4xl items-center gap-3.5 whitespace-nowrap px-4 py-4 sm:gap-6">
+          <nav className="mx-auto flex w-full max-w-4xl items-center gap-2.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] px-4 py-4 sm:gap-6">
             <Link href="/" className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
               {/* White artwork on transparent; inverted to black in light mode. */}
               <Image
@@ -40,31 +40,37 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 height={202}
                 priority
                 unoptimized
-                className="h-6 w-auto invert sm:h-7 dark:invert-0"
+                className="h-5 w-auto invert sm:h-7 dark:invert-0"
               />
-              <span className="hidden min-[400px]:inline">Stats</span>
+              <span className="hidden min-[420px]:inline">Stats</span>
             </Link>
             <Link
               href="/players"
-              className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Players
             </Link>
             <Link
               href="/layouts"
-              className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Layouts
             </Link>
             <Link
+              href="/events"
+              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+            >
+              Events
+            </Link>
+            <Link
               href="/leagues"
-              className="text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               League
             </Link>
             <Link
               href="/admin"
-              className="ml-auto text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="ml-auto text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Admin
             </Link>

@@ -193,8 +193,13 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
                   <tr key={`${r.eventId}|${r.round ?? "final"}`}>
                     <td className="whitespace-nowrap px-4 py-3">{formatDate(r.date)}</td>
                     <td className="px-4 py-3">
-                      {r.event.name}
-                      {r.round !== null && <span className="text-zinc-500"> · Week {r.round}</span>}
+                      <Link
+                        href={`/events/${r.eventId}${r.round !== null ? `?week=${r.round}` : ""}`}
+                        className="hover:underline"
+                      >
+                        {r.event.name}
+                        {r.round !== null && <span className="text-zinc-500"> · Week {r.round}</span>}
+                      </Link>
                       <PdgaLink href={pdgaEventUrl(r.eventId)} label={r.event.name} />
                     </td>
                     <td className="px-4 py-3">{r.event.type}</td>
