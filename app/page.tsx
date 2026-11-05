@@ -64,6 +64,12 @@ export default async function Home() {
         >
           Event results →
         </Link>
+        <Link
+          href="/match-play"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Match play →
+        </Link>
         {leagueYears[0] && (
           <Link
             href={`/leagues/${leagueYears[0]}`}

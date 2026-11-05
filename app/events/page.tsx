@@ -21,8 +21,11 @@ export default async function EventsPage({ searchParams }: PageProps<"/events">)
         </p>
       </div>
 
-      <div className="text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <TypeFilter type={type} href={(t) => (t ? `/events?type=${t}` : "/events")} />
+        <Link href="/match-play" className="font-medium hover:underline">
+          Match play →
+        </Link>
       </div>
 
       {events.length === 0 ? (
