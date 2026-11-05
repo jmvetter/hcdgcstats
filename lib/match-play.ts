@@ -25,7 +25,7 @@ export const MATCH_PLAY_EVENTS: MatchPlayEvent[] = [
   {
     id: "club-challenge-singles",
     name: "Club Challenge Match Play",
-    description: "Singles qualifier · 16 players · double elimination",
+    description: "Singles qualifier · 16 players · double elimination · finished around May 15, 2026",
     date: null,
     entrants: [
       { seed: 1, playerId: "logan-hamsley" },
@@ -98,6 +98,115 @@ export function matchStandings(event: MatchPlayEvent): MatchStanding[] {
       });
     }
     place += seeds.length;
+  }
+  return standings;
+}
+
+// Team events are between clubs, so teams are plain names rather than players.
+export type TeamMatch = { a: string; b: string; aPoints: number; bPoints: number };
+
+export type TeamMatchRound = { name: string; matches: TeamMatch[] };
+
+export type TeamMatchPlayEvent = {
+  id: string;
+  name: string;
+  description: string;
+  date: string | null; // ISO date, when known
+  ourTeam: string;
+  rounds: TeamMatchRound[]; // in order, up to and including the semifinals
+  thirdPlace: TeamMatch;
+  final: TeamMatch;
+};
+
+const t = (a: string, aPoints: number, b: string, bPoints: number): TeamMatch => ({ a, b, aPoints, bPoints });
+
+export const TEAM_MATCH_PLAY_EVENTS: TeamMatchPlayEvent[] = [
+  {
+    id: "club-challenge-team",
+    name: "Team Club Challenge Qualifier",
+    description: "Team match play · 16 clubs · 12 points a match",
+    date: "2026-06-14",
+    ourTeam: "Hendricks Co",
+    rounds: [
+      {
+        name: "Round 1",
+        matches: [
+          t("Crossroads", 7.5, "Ace Eagles (Evansville)", 4.5),
+          t("Henry Co", 7, "Logansport", 5),
+          t("KON (Churubusco)", 9, "Northern Terr", 3),
+          t("Lawrence", 7.5, "Johnson Co", 4.5),
+          t("Hendricks Co", 11.5, "Saucer Tossers", 0.5),
+          t("Marion", 8, "Brown Co CC", 4),
+          t("Kosciusko Co", 7, "Hunt/Markle", 5),
+          t("Freebird", 7.5, "Columbus", 4.5),
+        ],
+      },
+      {
+        name: "Quarterfinals",
+        matches: [
+          t("Henry Co", 7.5, "Crossroads", 4.5),
+          t("KON (Churubusco)", 7, "Lawrence", 5),
+          t("Hendricks Co", 7.5, "Marion", 4.5),
+          t("Kosciusko Co", 7.5, "Freebird", 4.5),
+        ],
+      },
+      {
+        name: "Semifinals",
+        matches: [t("Henry Co", 6.5, "KON (Churubusco)", 5.5), t("Hendricks Co", 6.5, "Kosciusko Co", 5.5)],
+      },
+    ],
+    thirdPlace: t("Kosciusko Co", 9, "KON (Churubusco)", 3),
+    final: t("Hendricks Co", 7, "Henry Co", 5),
+  },
+];
+
+// 7.5 -> "7½", 0.5 -> "½".
+export function formatPoints(points: number): string {
+  const whole = Math.floor(points);
+  return `${whole || points % 1 === 0 ? whole : ""}${points % 1 ? "½" : ""}`;
+}
+
+export type TeamStanding = {
+  team: string;
+  place: number;
+  tied: boolean;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+};
+
+const teamWinner = (x: TeamMatch) => (x.aPoints > x.bPoints ? x.a : x.b);
+const teamLoser = (x: TeamMatch) => (x.aPoints > x.bPoints ? x.b : x.a);
+
+// The final and third place match decide the top four; everyone knocked out
+// earlier ties with the others out in the same round, latest round first.
+export function teamStandings(event: TeamMatchPlayEvent): TeamStanding[] {
+  const groups: string[][] = [
+    [teamWinner(event.final)],
+    [teamLoser(event.final)],
+    [teamWinner(event.thirdPlace)],
+    [teamLoser(event.thirdPlace)],
+    ...event.rounds.slice(0, -1).reverse().map((r) => r.matches.map(teamLoser)),
+  ];
+  const matches = [...event.rounds.flatMap((r) => r.matches), event.thirdPlace, event.final];
+  const standings: TeamStanding[] = [];
+  let place = 1;
+  for (const teams of groups) {
+    for (const team of teams) {
+      const played = matches.filter((x) => x.a === team || x.b === team);
+      const wins = played.filter((x) => teamWinner(x) === team).length;
+      standings.push({
+        team,
+        place,
+        tied: teams.length > 1,
+        wins,
+        losses: played.length - wins,
+        pointsFor: played.reduce((sum, x) => sum + (x.a === team ? x.aPoints : x.bPoints), 0),
+        pointsAgainst: played.reduce((sum, x) => sum + (x.a === team ? x.bPoints : x.aPoints), 0),
+      });
+    }
+    place += teams.length;
   }
   return standings;
 }
