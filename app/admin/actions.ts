@@ -24,7 +24,8 @@ export type LoginState = { error?: string };
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const ok = await logIn(String(formData.get("password") ?? ""));
   if (!ok) return { error: "Wrong password." };
-  revalidatePath("/admin");
+  // The check-in screen has its own login, so refresh everything.
+  revalidatePath("/", "layout");
   return {};
 }
 

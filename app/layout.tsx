@@ -20,6 +20,8 @@ export const metadata: Metadata = {
     template: "%s · HCDGC Stats",
   },
   description: "Player performance at HCDGC league events and tournaments",
+  // Installed to a phone's home screen (see app/manifest.ts), it opens full screen.
+  appleWebApp: { capable: true, title: "HCDGC", statusBarStyle: "black" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

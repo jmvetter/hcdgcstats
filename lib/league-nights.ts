@@ -388,3 +388,11 @@ export function getNightPayout(night: LeagueNight, checkIns: CheckIn[]): NightPa
       .sort((a, b) => (a.division ?? "").localeCompare(b.division ?? "") || a.score - b.score),
   };
 }
+
+// Divisions used at check-in, most used first, for the phone screen's quick picks.
+export function listCheckInDivisions(): string[] {
+  const rows = db
+    .prepare("SELECT division FROM checkins GROUP BY division ORDER BY COUNT(*) DESC, division")
+    .all() as { division: string }[];
+  return rows.map((r) => r.division);
+}

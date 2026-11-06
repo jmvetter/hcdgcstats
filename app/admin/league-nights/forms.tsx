@@ -45,10 +45,11 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function NewNightForm() {
+export function NewNightForm({ from }: { from?: "check-in" }) {
   const [state, action, pending] = useActionState<FormState, FormData>(createNightAction, {});
   return (
     <form action={action} className="flex flex-col gap-3">
+      {from && <input type="hidden" name="from" value={from} />}
       <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1 text-sm">
           Date

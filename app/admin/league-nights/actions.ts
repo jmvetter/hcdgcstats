@@ -41,7 +41,10 @@ function nightIdFrom(formData: FormData): number {
 
 function refresh(nightId?: number) {
   revalidatePath(BASE);
-  if (nightId) revalidatePath(`${BASE}/${nightId}`);
+  if (nightId) {
+    revalidatePath(`${BASE}/${nightId}`);
+    revalidatePath(`/check-in/${nightId}`);
+  }
 }
 
 export async function createNightAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -51,7 +54,9 @@ export async function createNightAction(_prev: FormState, formData: FormData): P
   if (!isDate(date)) return { error: "Pick the night's date." };
   const id = createNight(date, name);
   refresh();
-  redirect(`${BASE}/${id}`);
+  revalidatePath("/check-in");
+  // Started from the phone check-in screen, go back to it.
+  redirect(formData.get("from") === "check-in" ? `/check-in/${id}` : `${BASE}/${id}`);
 }
 
 export async function deleteNightAction(formData: FormData): Promise<void> {
