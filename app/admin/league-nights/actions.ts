@@ -63,7 +63,8 @@ export async function deleteNightAction(formData: FormData): Promise<void> {
   await requireAdmin();
   deleteNight(nightIdFrom(formData));
   refresh();
-  redirect(BASE);
+  revalidatePath("/check-in");
+  redirect(formData.get("from") === "check-in" ? "/check-in" : BASE);
 }
 
 export async function saveNightAction(_prev: FormState, formData: FormData): Promise<FormState> {

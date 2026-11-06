@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useOffline } from "next/offline";
 import { useOptimistic, useState, useTransition } from "react";
 import { checkInAction, removeCheckInAction, updateCheckInAction } from "@/app/admin/league-nights/actions";
+import { DeleteNightButton } from "@/app/admin/league-nights/forms";
 import { formatDate } from "@/lib/format";
 import type { CheckIn, CheckInPlayer } from "@/lib/league-nights";
 
@@ -246,9 +247,12 @@ export function CheckInScreen({
           ))}
       </section>
 
-      <Link href={`/admin/league-nights/${night.id}`} className="text-sm text-zinc-500 hover:underline">
-        Results, payouts and division changes →
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href={`/admin/league-nights/${night.id}`} className="text-sm text-zinc-500 hover:underline">
+          Results, payouts and division changes →
+        </Link>
+        <DeleteNightButton nightId={night.id} name={night.name} from="check-in" />
+      </div>
     </div>
   );
 }

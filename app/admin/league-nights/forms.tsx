@@ -504,7 +504,7 @@ function SettingSelect({
   );
 }
 
-export function DeleteNightButton({ nightId, name }: { nightId: number; name: string }) {
+export function DeleteNightButton({ nightId, name, from }: { nightId: number; name: string; from?: "check-in" }) {
   return (
     <form
       action={deleteNightAction}
@@ -513,6 +513,7 @@ export function DeleteNightButton({ nightId, name }: { nightId: number; name: st
       }}
     >
       <input type="hidden" name="nightId" value={nightId} />
+      {from && <input type="hidden" name="from" value={from} />}
       <button className="text-sm text-red-600 hover:underline">Delete night</button>
     </form>
   );
