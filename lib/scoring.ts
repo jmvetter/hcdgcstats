@@ -178,6 +178,10 @@ export function createMatch(input: {
   return Number(r.lastInsertRowid);
 }
 
+export function updateMatch(id: number, input: { matchupId: number | null; round: number }) {
+  db.prepare("UPDATE mp_matches SET matchup_id = ?, round = ? WHERE id = ?").run(input.matchupId, input.round, id);
+}
+
 export function deleteMatch(id: number) {
   db.prepare("DELETE FROM mp_matches WHERE id = ?").run(id);
 }

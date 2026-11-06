@@ -11,7 +11,9 @@ import {
   deleteScoringEvent,
   getMatchup,
   getScoringEventName,
+  getScoringMatch,
   listPlayedPlayerNames,
+  updateMatch,
 } from "@/lib/scoring";
 
 export type FormState = { message?: string; error?: string };
@@ -86,6 +88,24 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   createMatch({ eventId, matchupId, label, sideA, sideB, holes, round });
   refresh();
   return { message: `Added ${sideA} vs ${sideB} to round ${round}.` };
+}
+
+// Moves a match to another round or team matchup; its scores stay.
+export async function updateMatchAction(
+  matchId: number,
+  matchupId: number | null,
+  round: number,
+): Promise<{ error?: string }> {
+  await requireAdmin();
+  const match = getScoringMatch(matchId);
+  if (!match) return { error: "That match no longer exists." };
+  if (matchupId !== null && getMatchup(matchupId)?.eventId !== match.eventId) {
+    return { error: "Pick a matchup from this event." };
+  }
+  if (!Number.isInteger(round) || round < 1 || round > 9) return { error: "Pick a round." };
+  updateMatch(matchId, { matchupId, round });
+  refresh();
+  return {};
 }
 
 export async function deleteMatchAction(formData: FormData): Promise<void> {

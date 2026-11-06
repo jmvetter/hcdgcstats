@@ -7,7 +7,7 @@ import { formatDate } from "@/lib/format";
 import { matchStatus, statusHeadline } from "@/lib/match-status";
 import { listMatchCodes, listPlayedPlayerNames, listScoringEvents, type ScoringEvent } from "@/lib/scoring";
 import { deleteEventAction, deleteMatchAction, deleteMatchupAction } from "./actions";
-import { ConfirmButton, NewEventForm, NewMatchForm, NewMatchupForm } from "./forms";
+import { ConfirmButton, MatchPlacement, NewEventForm, NewMatchForm, NewMatchupForm } from "./forms";
 
 export const metadata: Metadata = {
   title: "Match play scoring",
@@ -59,10 +59,7 @@ function EventSection({
   codes: Map<number, string>;
   players: string[];
 }) {
-  const matchupName = (id: number | null) => {
-    const m = event.matchups.find((x) => x.id === id);
-    return m ? `${m.teamA} vs ${m.teamB}` : null;
-  };
+  const lastRound = Math.max(1, ...event.matches.map((m) => m.round));
 
   return (
     <section className="flex flex-col gap-5 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
@@ -120,10 +117,16 @@ function EventSection({
                         {m.sideA} vs {m.sideB}
                       </Link>
                       <span className="block text-xs text-zinc-500">
-                        {[`Round ${m.round}`, m.label, matchupName(m.matchupId), `${m.holes} holes`]
-                          .filter(Boolean)
-                          .join(" · ")}
+                        {[m.label, `${m.holes} holes`].filter(Boolean).join(" · ")}
                       </span>
+                      <MatchPlacement
+                        key={`${m.id}-${m.round}-${m.matchupId}`}
+                        matchId={m.id}
+                        matchupId={m.matchupId}
+                        round={m.round}
+                        matchups={event.matchups}
+                        rounds={lastRound}
+                      />
                     </td>
                     <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
                       {statusHeadline(matchStatus(m.results), m.sideA, m.sideB)}
@@ -147,7 +150,7 @@ function EventSection({
             eventId={event.id}
             matchups={event.matchups}
             players={players}
-            lastRound={Math.max(1, ...event.matches.map((m) => m.round))}
+            lastRound={lastRound}
           />
         </div>
       </div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { startTransition, useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useRef, useState, useTransition } from "react";
 import type { ScoringMatchup } from "@/lib/scoring";
-import { createEventAction, createMatchAction, createMatchupAction, type FormState } from "./actions";
+import { createEventAction, createMatchAction, createMatchupAction, updateMatchAction, type FormState } from "./actions";
 
 const input =
   "rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
@@ -15,14 +15,21 @@ function Status({ state }: { state: FormState }) {
   return null;
 }
 
-// Runs the action, and clears the form's fields only when it worked. Submitting
-// through onSubmit (not the form's action prop) stops React from clearing the
-// fields after an error, so a typo doesn't wipe every pick.
-function useResettingAction(action: (prev: FormState, formData: FormData) => Promise<FormState>) {
+// Runs the action, and clears the form's fields only when it worked (or calls
+// onSuccess instead, for forms that keep some choices). Submitting through
+// onSubmit (not the form's action prop) stops React from clearing the fields
+// after an error, so a typo doesn't wipe every pick.
+function useResettingAction(
+  action: (prev: FormState, formData: FormData) => Promise<FormState>,
+  onSuccess?: () => void,
+) {
   const form = useRef<HTMLFormElement>(null);
   const [state, run, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await action(prev, formData);
-    if (!result.error) form.current?.reset();
+    if (!result.error) {
+      if (onSuccess) onSuccess();
+      else form.current?.reset();
+    }
     return result;
   }, {});
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -160,7 +167,10 @@ export function NewMatchForm({
   // Highest round that already has matches; new matches start there.
   lastRound: number;
 }) {
-  const { form, state, onSubmit, pending } = useResettingAction(createMatchAction);
+  // After a match is added only the players and label clear (by remounting
+  // them); the matchup, round, format and holes stay for the next match.
+  const [cleared, setCleared] = useState(0);
+  const { form, state, onSubmit, pending } = useResettingAction(createMatchAction, () => setCleared((n) => n + 1));
   const [format, setFormat] = useState<"singles" | "doubles">("singles");
   const [round, setRound] = useState(Math.max(1, lastRound));
   const roundChoices = Array.from({ length: Math.max(3, lastRound) }, (_, i) => i + 1);
@@ -172,7 +182,7 @@ export function NewMatchForm({
         {matchups.length > 0 && (
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             Team matchup
-            <select name="matchupId" className={input}>
+            <select name="matchupId" defaultValue={matchups[0].id} className={input}>
               <option value="">None (not part of a team score)</option>
               {matchups.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -205,11 +215,15 @@ export function NewMatchForm({
             label="Format"
           />
         </fieldset>
-        <SidePicker side="a" title="Side A" count={perSide} players={players} />
-        <SidePicker side="b" title="Side B" count={perSide} players={players} />
+        <SidePicker key={`a${cleared}`} side="a" title="Side A" count={perSide} players={players} />
+        <SidePicker key={`b${cleared}`} side="b" title="Side B" count={perSide} players={players} />
         <label className="flex flex-col gap-1 text-sm">
           Label <span className="sr-only">(optional)</span>
-          <input name="label" placeholder={`Optional, e.g. ${format === "doubles" ? "Doubles" : "Singles"} 1`} className={input} />
+          <input
+            key={`label${cleared}`}
+            name="label"             placeholder={`Optional, e.g. ${format === "doubles" ? "Doubles" : "Singles"} 1`}
+            className={input}
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Holes
@@ -221,6 +235,69 @@ export function NewMatchForm({
       </button>
       <Status state={state} />
     </form>
+  );
+}
+
+// Inline round and team-matchup pickers on a match in the admin list, so a
+// match set up in the wrong place can be moved without losing its scores.
+export function MatchPlacement({
+  matchId,
+  matchupId,
+  round,
+  matchups,
+  rounds,
+}: {
+  matchId: number;
+  matchupId: number | null;
+  round: number;
+  matchups: ScoringMatchup[];
+  rounds: number;
+}) {
+  const [value, setValue] = useState({ matchupId, round });
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startSaving] = useTransition();
+  const save = (next: { matchupId: number | null; round: number }) => {
+    setValue(next);
+    setError(null);
+    startSaving(async () => {
+      const result = await updateMatchAction(matchId, next.matchupId, next.round);
+      if (result.error) setError(result.error);
+    });
+  };
+  const small =
+    "rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900";
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+      <select
+        aria-label="Round"
+        value={value.round}
+        onChange={(e) => save({ ...value, round: Number(e.target.value) })}
+        className={small}
+      >
+        {Array.from({ length: Math.max(3, rounds, value.round) }, (_, i) => i + 1).map((r) => (
+          <option key={r} value={r}>
+            Round {r}
+          </option>
+        ))}
+      </select>
+      {matchups.length > 0 && (
+        <select
+          aria-label="Team matchup"
+          value={value.matchupId ?? ""}
+          onChange={(e) => save({ ...value, matchupId: e.target.value ? Number(e.target.value) : null })}
+          className={`${small} ${value.matchupId === null ? "border-amber-500 text-amber-700 dark:text-amber-400" : ""}`}
+        >
+          <option value="">No team matchup</option>
+          {matchups.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.teamA} vs {m.teamB}
+            </option>
+          ))}
+        </select>
+      )}
+      {pending && <span>Saving…</span>}
+      {error && <span className="text-red-600">{error}</span>}
+    </span>
   );
 }
 
