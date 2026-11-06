@@ -131,6 +131,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </a>
               .
             </p>
+            <p className="basis-full text-xs text-zinc-500">
+              Powered by{" "}
+              <a
+                href="https://claude.com/claude-code"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-zinc-700 hover:underline dark:text-zinc-300"
+              >
+                Claude Code
+              </a>
+              .
+            </p>
           </div>
         </footer>
       </body>
