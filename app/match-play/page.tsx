@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getPlayers } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import { matchStatus, statusHeadline, teamTotals } from "@/lib/match-status";
+import { listScoringEvents, type ScoringEvent, type ScoringMatch } from "@/lib/scoring";
 import {
   formatPoints,
   MATCH_PLAY_EVENTS,
@@ -23,6 +25,8 @@ type Names = Map<string, string>;
 
 export default async function MatchPlayPage() {
   const names: Names = new Map((await getPlayers()).map((p) => [p.id, p.name]));
+  // Events scored live on the Scoring tab, newest first.
+  const scored = listScoringEvents().filter((e) => e.matches.length > 0);
 
   return (
     <div className="flex flex-col gap-10">
@@ -30,6 +34,9 @@ export default async function MatchPlayPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Match Play</h1>
         <p className="text-zinc-600 dark:text-zinc-400">This year&apos;s match play events, and who beat who.</p>
       </div>
+      {scored.map((event) => (
+        <ScoredEventSection key={`scored-${event.id}`} event={event} />
+      ))}
       {TEAM_MATCH_PLAY_EVENTS.map((event) => (
         <TeamEventSection key={event.id} event={event} />
       ))}
@@ -37,6 +44,68 @@ export default async function MatchPlayPage() {
         <EventSection key={event.id} event={event} names={names} />
       ))}
     </div>
+  );
+}
+
+function ScoredEventSection({ event }: { event: ScoringEvent }) {
+  const done = (m: ScoringMatch) => matchStatus(m.results).finished;
+  const live = event.matches.filter((m) => !done(m)).length;
+  const groups = [
+    ...event.matchups.map((mu) => ({
+      key: `mu-${mu.id}`,
+      matchup: mu,
+      matches: event.matches.filter((m) => m.matchupId === mu.id),
+    })),
+    { key: "loose", matchup: null, matches: event.matches.filter((m) => m.matchupId === null) },
+  ].filter((g) => g.matches.length > 0);
+
+  return (
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-xl font-semibold">{event.name}</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {[event.date && formatDate(event.date), `${event.matches.length} matches`].filter(Boolean).join(" · ")}
+        </p>
+        {live > 0 && (
+          <p className="text-sm">
+            {live} {live === 1 ? "match is" : "matches are"} still being played.{" "}
+            <Link href="/scoring" className="font-medium underline">
+              Follow live on the Scoring tab →
+            </Link>
+          </p>
+        )}
+      </div>
+
+      {groups.map(({ key, matchup, matches }) => {
+        const finished = matches.filter(done);
+        const totals = teamTotals(matches);
+        return (
+          <div key={key} className="flex flex-col gap-2">
+            {matchup && (
+              <h3 className="text-base font-semibold">
+                {matchup.teamA} {formatPoints(totals.a)} – {formatPoints(totals.b)} {matchup.teamB}
+                <span className="ml-2 text-sm font-normal text-zinc-500">{totals.live ? "so far" : "final"}</span>
+              </h3>
+            )}
+            {finished.length > 0 && (
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {finished.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex flex-col rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    <span className="font-semibold">{statusHeadline(matchStatus(m.results), m.sideA, m.sideB)}</span>
+                    <span className="text-zinc-500">
+                      {[`${m.sideA} vs ${m.sideB}`, m.label].filter(Boolean).join(" · ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

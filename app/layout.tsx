@@ -34,7 +34,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <nav className="mx-auto flex w-full max-w-4xl items-center gap-2.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] px-4 py-4 sm:gap-6">
             <Link href="/" className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
-              {/* White artwork on transparent; inverted to black in light mode. */}
+              {/* White artwork on transparent; inverted to black in light mode. The
+                  narrower shield stands in on phones so the nav links fit. */}
               <Image
                 src="/logos/hcdgc-wordmark.png"
                 alt="HCDGC"
@@ -42,9 +43,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 height={202}
                 priority
                 unoptimized
-                className="h-5 w-auto invert sm:h-7 dark:invert-0"
+                className="hidden h-7 w-auto invert sm:block dark:invert-0"
               />
-              <span className="hidden min-[420px]:inline">Stats</span>
+              <Image
+                src="/logos/hcdgc-shield.png"
+                alt="HCDGC"
+                width={769}
+                height={869}
+                priority
+                unoptimized
+                className="h-7 w-auto invert sm:hidden dark:invert-0"
+              />
+              <span className="hidden sm:inline">Stats</span>
             </Link>
             <Link
               href="/players"
@@ -69,6 +79,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               League
+            </Link>
+            <Link
+              href="/scoring"
+              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+            >
+              Scoring
             </Link>
             <Link
               href="/admin"

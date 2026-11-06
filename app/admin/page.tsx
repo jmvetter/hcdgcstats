@@ -59,6 +59,18 @@ export default async function AdminPage() {
       </Section>
 
       <Section
+        title="Match play scoring"
+        description="Set up match play matches and hand each card a code so they can score their match hole by hole on the Scoring tab. Team matchups add up into a team score."
+      >
+        <Link
+          href="/admin/match-play"
+          className="self-start rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          Set up matches →
+        </Link>
+      </Section>
+
+      <Section
         title="Club members"
         description={
           pdgaConfigured()

@@ -99,6 +99,45 @@ CREATE TABLE IF NOT EXISTS checkins (
   checked_in_at TEXT NOT NULL,
   PRIMARY KEY (night_id, player_id)
 );
+
+-- Live match play scoring. Cards score their own match hole by hole on the
+-- Scoring tab, using the match's code. Side names are free text: players for
+-- singles, or players or teams for anything else.
+CREATE TABLE IF NOT EXISTS mp_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  date TEXT, -- ISO date
+  created_at TEXT NOT NULL
+);
+
+-- A team-vs-team matchup within an event; its matches' points add up to a team score.
+CREATE TABLE IF NOT EXISTS mp_matchups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES mp_events(id) ON DELETE CASCADE,
+  team_a TEXT NOT NULL,
+  team_b TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mp_matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES mp_events(id) ON DELETE CASCADE,
+  matchup_id INTEGER REFERENCES mp_matchups(id) ON DELETE CASCADE,
+  label TEXT,
+  side_a TEXT NOT NULL,
+  side_b TEXT NOT NULL,
+  holes INTEGER NOT NULL DEFAULT 18,
+  code TEXT NOT NULL, -- given to the card so they can score the match
+  created_at TEXT NOT NULL
+);
+
+-- Who took each hole: side A, side B, or halved (a push).
+CREATE TABLE IF NOT EXISTS mp_holes (
+  match_id INTEGER NOT NULL REFERENCES mp_matches(id) ON DELETE CASCADE,
+  hole INTEGER NOT NULL,
+  result TEXT NOT NULL CHECK (result IN ('A', 'B', 'H')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (match_id, hole)
+);
 `;
 
 function open(): DatabaseSync {
