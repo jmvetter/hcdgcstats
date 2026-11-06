@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { matchStatus, statusHeadline } from "@/lib/match-status";
-import { listMatchCodes, listScoringEvents, type ScoringEvent } from "@/lib/scoring";
+import { listMatchCodes, listPlayedPlayerNames, listScoringEvents, type ScoringEvent } from "@/lib/scoring";
 import { deleteEventAction, deleteMatchAction, deleteMatchupAction } from "./actions";
 import { ConfirmButton, NewEventForm, NewMatchForm, NewMatchupForm } from "./forms";
 
@@ -19,6 +19,7 @@ export default async function AdminMatchPlayPage() {
   if (!(await isAdmin())) redirect("/admin");
   const events = listScoringEvents();
   const codes = listMatchCodes();
+  const players = listPlayedPlayerNames();
 
   return (
     <div className="flex flex-col gap-8">
@@ -43,13 +44,21 @@ export default async function AdminMatchPlayPage() {
       </section>
 
       {events.map((event) => (
-        <EventSection key={event.id} event={event} codes={codes} />
+        <EventSection key={event.id} event={event} codes={codes} players={players} />
       ))}
     </div>
   );
 }
 
-function EventSection({ event, codes }: { event: ScoringEvent; codes: Map<number, string> }) {
+function EventSection({
+  event,
+  codes,
+  players,
+}: {
+  event: ScoringEvent;
+  codes: Map<number, string>;
+  players: string[];
+}) {
   const matchupName = (id: number | null) => {
     const m = event.matchups.find((x) => x.id === id);
     return m ? `${m.teamA} vs ${m.teamB}` : null;
@@ -132,7 +141,7 @@ function EventSection({ event, codes }: { event: ScoringEvent; codes: Map<number
         )}
         <div className="mt-2 rounded-md border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
           <h4 className="mb-3 text-sm font-semibold">Add a match</h4>
-          <NewMatchForm eventId={event.id} matchups={event.matchups} />
+          <NewMatchForm eventId={event.id} matchups={event.matchups} players={players} />
         </div>
       </div>
     </section>

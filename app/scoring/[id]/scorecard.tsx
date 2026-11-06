@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useOffline } from "next/offline";
 import { useActionState, useOptimistic, useState, useTransition } from "react";
-import { matchStatus, statusDetail, statusHeadline, type HoleResult } from "@/lib/match-status";
+import { matchStatus, shortSide, statusDetail, statusHeadline, type HoleResult } from "@/lib/match-status";
 import type { ScoringMatch } from "@/lib/scoring";
 import { setHoleAction, unlockMatchAction, type UnlockState } from "../actions";
 
@@ -142,9 +142,9 @@ export function Scorecard({
               </p>
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                <ResultButton label={match.sideA} sub="took it" active={current === "A"} tone={SIDE.A.fill} onClick={() => record(selected, "A")} />
+                <ResultButton label={shortSide(match.sideA)} sub="took it" active={current === "A"} tone={SIDE.A.fill} onClick={() => record(selected, "A")} />
                 <ResultButton label="Push" sub="halved" active={current === "H"} tone="bg-zinc-600 text-white" onClick={() => record(selected, "H")} />
-                <ResultButton label={match.sideB} sub="took it" active={current === "B"} tone={SIDE.B.fill} onClick={() => record(selected, "B")} />
+                <ResultButton label={shortSide(match.sideB)} sub="took it" active={current === "B"} tone={SIDE.B.fill} onClick={() => record(selected, "B")} />
               </div>
             )}
             {current && (

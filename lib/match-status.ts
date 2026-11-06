@@ -30,14 +30,28 @@ export function matchStatus(results: (HoleResult | null)[]): MatchStatus {
 }
 
 // "Team A 2 up", "All square", "Team A wins 3 & 2", "Match halved".
+// A side's name for scores and buttons. Doubles pairs ("Logan Bill & John
+// Vetter") shorten to first name and last initial ("Logan B & John V") so they
+// fit on a phone; singles names stay as they are.
+export function shortSide(side: string): string {
+  const players = side.split(" & ");
+  if (players.length < 2) return side;
+  return players
+    .map((name) => {
+      const parts = name.trim().split(/\s+/);
+      return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}` : name.trim();
+    })
+    .join(" & ");
+}
+
 export function statusHeadline(s: MatchStatus, sideA: string, sideB: string): string {
-  const leader = s.leader === "A" ? sideA : sideB;
+  const leader = shortSide(s.leader === "A" ? sideA : sideB);
   if (s.finished) {
     if (!s.leader) return "Match halved";
-    return s.remaining > 0 ? `${leader} wins ${s.lead} & ${s.remaining}` : `${leader} wins ${s.lead} up`;
+    return s.remaining > 0 ? `${leader} wins ${s.lead}\u00a0&\u00a0${s.remaining}` : `${leader} wins ${s.lead}\u00a0up`;
   }
   if (s.played === 0) return "Not started";
-  return s.leader ? `${leader} ${s.lead} up` : "All square";
+  return s.leader ? `${leader} ${s.lead}\u00a0up` : "All square";
 }
 
 // "5 holes played, 13 to go", plus "dormie" when it applies.

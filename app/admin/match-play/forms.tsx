@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { startTransition, useActionState, useRef, useState } from "react";
 import type { ScoringMatchup } from "@/lib/scoring";
 import { createEventAction, createMatchAction, createMatchupAction, type FormState } from "./actions";
 
@@ -15,7 +15,9 @@ function Status({ state }: { state: FormState }) {
   return null;
 }
 
-// Runs the action, and clears the form's fields only when it worked.
+// Runs the action, and clears the form's fields only when it worked. Submitting
+// through onSubmit (not the form's action prop) stops React from clearing the
+// fields after an error, so a typo doesn't wipe every pick.
 function useResettingAction(action: (prev: FormState, formData: FormData) => Promise<FormState>) {
   const form = useRef<HTMLFormElement>(null);
   const [state, run, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -23,13 +25,18 @@ function useResettingAction(action: (prev: FormState, formData: FormData) => Pro
     if (!result.error) form.current?.reset();
     return result;
   }, {});
-  return { form, state, run, pending };
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(() => run(formData));
+  };
+  return { form, state, onSubmit, pending };
 }
 
 export function NewEventForm() {
-  const { form, state, run, pending } = useResettingAction(createEventAction);
+  const { form, state, onSubmit, pending } = useResettingAction(createEventAction);
   return (
-    <form ref={form} action={run} className="flex flex-col gap-3">
+    <form ref={form} onSubmit={onSubmit} className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
         <label className="flex flex-col gap-1 text-sm">
           Event name
@@ -49,9 +56,9 @@ export function NewEventForm() {
 }
 
 export function NewMatchupForm({ eventId }: { eventId: number }) {
-  const { form, state, run, pending } = useResettingAction(createMatchupAction);
+  const { form, state, onSubmit, pending } = useResettingAction(createMatchupAction);
   return (
-    <form ref={form} action={run} className="flex flex-col gap-2">
+    <form ref={form} onSubmit={onSubmit} className="flex flex-col gap-2">
       <input type="hidden" name="eventId" value={eventId} />
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1 text-sm">
@@ -71,10 +78,57 @@ export function NewMatchupForm({ eventId }: { eventId: number }) {
   );
 }
 
-export function NewMatchForm({ eventId, matchups }: { eventId: number; matchups: ScoringMatchup[] }) {
-  const { form, state, run, pending } = useResettingAction(createMatchAction);
+function SidePicker({
+  side,
+  title,
+  count,
+  players,
+}: {
+  side: "a" | "b";
+  title: string;
+  count: number;
+  players: string[];
+}) {
   return (
-    <form ref={form} action={run} className="flex flex-col gap-2">
+    <fieldset className="flex flex-col gap-2 text-sm">
+      <legend className="mb-1">{count > 1 ? `${title} players` : `${title} player`}</legend>
+      {Array.from({ length: count }, (_, i) => (
+        <select
+          key={i}
+          name={`${side}${i + 1}`}
+          required
+          defaultValue=""
+          aria-label={`${title} player ${i + 1}`}
+          className={input}
+        >
+          <option value="" disabled>
+            {count > 1 ? `Pick player ${i + 1}…` : "Pick a player…"}
+          </option>
+          {players.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      ))}
+    </fieldset>
+  );
+}
+
+export function NewMatchForm({
+  eventId,
+  matchups,
+  players,
+}: {
+  eventId: number;
+  matchups: ScoringMatchup[];
+  players: string[];
+}) {
+  const { form, state, onSubmit, pending } = useResettingAction(createMatchAction);
+  const [format, setFormat] = useState<"singles" | "doubles">("singles");
+  const perSide = format === "doubles" ? 2 : 1;
+  return (
+    <form ref={form} onSubmit={onSubmit} className="flex flex-col gap-2">
       <input type="hidden" name="eventId" value={eventId} />
       <div className="grid gap-2 sm:grid-cols-2">
         {matchups.length > 0 && (
@@ -90,17 +144,32 @@ export function NewMatchForm({ eventId, matchups }: { eventId: number; matchups:
             </select>
           </label>
         )}
-        <label className="flex flex-col gap-1 text-sm">
-          Side A (player or team)
-          <input name="sideA" required placeholder="Logan H" className={input} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Side B (player or team)
-          <input name="sideB" required placeholder="Kevin L" className={input} />
-        </label>
+        <fieldset className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <legend className="mb-1">Format</legend>
+          <input type="hidden" name="format" value={format} />
+          <div className="inline-flex self-start rounded-full border border-zinc-300 p-0.5 dark:border-zinc-700">
+            {(["singles", "doubles"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={format === f}
+                onClick={() => setFormat(f)}
+                className={`rounded-full px-4 py-1.5 text-sm capitalize ${
+                  format === f
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <SidePicker side="a" title="Side A" count={perSide} players={players} />
+        <SidePicker side="b" title="Side B" count={perSide} players={players} />
         <label className="flex flex-col gap-1 text-sm">
           Label <span className="sr-only">(optional)</span>
-          <input name="label" placeholder="Optional, e.g. Singles 1" className={input} />
+          <input name="label" placeholder={`Optional, e.g. ${format === "doubles" ? "Doubles" : "Singles"} 1`} className={input} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Holes

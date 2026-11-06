@@ -11,6 +11,7 @@ import {
   deleteScoringEvent,
   getMatchup,
   getScoringEventName,
+  listPlayedPlayerNames,
 } from "@/lib/scoring";
 
 export type FormState = { message?: string; error?: string };
@@ -62,14 +63,25 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   await requireAdmin();
   const eventId = Number(formData.get("eventId"));
   const matchupId = Number(formData.get("matchupId")) || null;
-  const sideA = text(formData, "sideA");
-  const sideB = text(formData, "sideB");
+  const doubles = formData.get("format") === "doubles";
+  const perSide = doubles ? 2 : 1;
+  const pick = (side: "a" | "b") =>
+    Array.from({ length: perSide }, (_, i) => text(formData, `${side}${i + 1}`));
+  const playersA = pick("a");
+  const playersB = pick("b");
   const holes = Number(formData.get("holes"));
   if (!getScoringEventName(eventId)) return { error: "That event no longer exists." };
   if (matchupId !== null && getMatchup(matchupId)?.eventId !== eventId) return { error: "Pick a matchup from this event." };
-  if (!sideA || !sideB) return { error: "Enter both sides of the match." };
+  const all = [...playersA, ...playersB];
+  if (all.some((p) => !p)) return { error: doubles ? "Pick two players for each side." : "Pick a player for each side." };
+  const known = new Set(listPlayedPlayerNames());
+  if (all.some((p) => !known.has(p))) return { error: "Pick players from the list." };
+  if (new Set(all).size !== all.length) return { error: "Each player can only be in the match once." };
   if (!Number.isInteger(holes) || holes < 1 || holes > 36) return { error: "Holes should be between 1 and 36." };
-  createMatch({ eventId, matchupId, label: text(formData, "label") || null, sideA, sideB, holes });
+  const sideA = playersA.join(" & ");
+  const sideB = playersB.join(" & ");
+  const label = text(formData, "label") || (doubles ? "Doubles" : "Singles");
+  createMatch({ eventId, matchupId, label, sideA, sideB, holes });
   refresh();
   return { message: `Added ${sideA} vs ${sideB}.` };
 }

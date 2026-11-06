@@ -125,6 +125,19 @@ export function deleteScoringEvent(id: number) {
   db.prepare("DELETE FROM mp_events WHERE id = ?").run(id);
 }
 
+// Individual players (not doubles team entries) with at least one club result,
+// for the match setup pickers.
+export function listPlayedPlayerNames(): string[] {
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT p.name FROM players p
+       WHERE p.team = 0 AND EXISTS (SELECT 1 FROM results r WHERE r.player_id = p.id)
+       ORDER BY p.name COLLATE NOCASE`,
+    )
+    .all() as { name: string }[];
+  return rows.map((r) => r.name);
+}
+
 export function createMatchup(eventId: number, teamA: string, teamB: string) {
   db.prepare("INSERT INTO mp_matchups (event_id, team_a, team_b) VALUES (?, ?, ?)").run(eventId, teamA, teamB);
 }
