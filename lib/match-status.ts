@@ -82,3 +82,14 @@ export function teamTotals(matches: { results: (HoleResult | null)[] }[]): { a: 
   }
   return { a, b, live };
 }
+
+// Matches grouped by round, in round order.
+export function groupByRound<T extends { round: number }>(matches: T[]): { round: number; matches: T[] }[] {
+  const groups = new Map<number, T[]>();
+  for (const m of matches) {
+    const list = groups.get(m.round);
+    if (list) list.push(m);
+    else groups.set(m.round, [m]);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a - b).map(([round, list]) => ({ round, matches: list }));
+}

@@ -70,6 +70,7 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   const playersA = pick("a");
   const playersB = pick("b");
   const holes = Number(formData.get("holes"));
+  const round = Number(formData.get("round"));
   if (!getScoringEventName(eventId)) return { error: "That event no longer exists." };
   if (matchupId !== null && getMatchup(matchupId)?.eventId !== eventId) return { error: "Pick a matchup from this event." };
   const all = [...playersA, ...playersB];
@@ -78,12 +79,13 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   if (all.some((p) => !known.has(p))) return { error: "Pick players from the list." };
   if (new Set(all).size !== all.length) return { error: "Each player can only be in the match once." };
   if (!Number.isInteger(holes) || holes < 1 || holes > 36) return { error: "Holes should be between 1 and 36." };
+  if (!Number.isInteger(round) || round < 1 || round > 9) return { error: "Pick a round." };
   const sideA = playersA.join(" & ");
   const sideB = playersB.join(" & ");
   const label = text(formData, "label") || (doubles ? "Doubles" : "Singles");
-  createMatch({ eventId, matchupId, label, sideA, sideB, holes });
+  createMatch({ eventId, matchupId, label, sideA, sideB, holes, round });
   refresh();
-  return { message: `Added ${sideA} vs ${sideB}.` };
+  return { message: `Added ${sideA} vs ${sideB} to round ${round}.` };
 }
 
 export async function deleteMatchAction(formData: FormData): Promise<void> {

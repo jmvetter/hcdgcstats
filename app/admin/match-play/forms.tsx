@@ -78,6 +78,39 @@ export function NewMatchupForm({ eventId }: { eventId: number }) {
   );
 }
 
+function Segmented<T extends string | number>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <div className="inline-flex self-start rounded-full border border-zinc-300 p-0.5 dark:border-zinc-700">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          aria-label={`${label}: ${o.label}`}
+          onClick={() => onChange(o.value)}
+          className={`min-w-10 rounded-full px-4 py-1.5 text-sm ${
+            value === o.value
+              ? "bg-black text-white dark:bg-white dark:text-black"
+              : "text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SidePicker({
   side,
   title,
@@ -119,13 +152,18 @@ export function NewMatchForm({
   eventId,
   matchups,
   players,
+  lastRound,
 }: {
   eventId: number;
   matchups: ScoringMatchup[];
   players: string[];
+  // Highest round that already has matches; new matches start there.
+  lastRound: number;
 }) {
   const { form, state, onSubmit, pending } = useResettingAction(createMatchAction);
   const [format, setFormat] = useState<"singles" | "doubles">("singles");
+  const [round, setRound] = useState(Math.max(1, lastRound));
+  const roundChoices = Array.from({ length: Math.max(3, lastRound) }, (_, i) => i + 1);
   const perSide = format === "doubles" ? 2 : 1;
   return (
     <form ref={form} onSubmit={onSubmit} className="flex flex-col gap-2">
@@ -144,26 +182,28 @@ export function NewMatchForm({
             </select>
           </label>
         )}
-        <fieldset className="flex flex-col gap-1 text-sm sm:col-span-2">
+        <fieldset className="flex flex-col gap-1 text-sm">
+          <legend className="mb-1">Round</legend>
+          <input type="hidden" name="round" value={round} />
+          <Segmented
+            options={roundChoices.map((r) => ({ value: r, label: String(r) }))}
+            value={round}
+            onChange={setRound}
+            label="Round"
+          />
+        </fieldset>
+        <fieldset className="flex flex-col gap-1 text-sm">
           <legend className="mb-1">Format</legend>
           <input type="hidden" name="format" value={format} />
-          <div className="inline-flex self-start rounded-full border border-zinc-300 p-0.5 dark:border-zinc-700">
-            {(["singles", "doubles"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={format === f}
-                onClick={() => setFormat(f)}
-                className={`rounded-full px-4 py-1.5 text-sm capitalize ${
-                  format === f
-                    ? "bg-black text-white dark:bg-white dark:text-black"
-                    : "text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            options={[
+              { value: "singles", label: "Singles" },
+              { value: "doubles", label: "Doubles" },
+            ]}
+            value={format}
+            onChange={setFormat}
+            label="Format"
+          />
         </fieldset>
         <SidePicker side="a" title="Side A" count={perSide} players={players} />
         <SidePicker side="b" title="Side B" count={perSide} players={players} />

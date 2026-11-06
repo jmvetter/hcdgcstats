@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getPlayers } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { matchStatus, statusHeadline, teamTotals } from "@/lib/match-status";
+import { RoundScores } from "@/app/components/round-scores";
+import { groupByRound, matchStatus, statusHeadline, teamTotals } from "@/lib/match-status";
 import { listScoringEvents, type ScoringEvent, type ScoringMatch } from "@/lib/scoring";
 import {
   formatPoints,
@@ -82,26 +83,32 @@ function ScoredEventSection({ event }: { event: ScoringEvent }) {
         return (
           <div key={key} className="flex flex-col gap-2">
             {matchup && (
-              <h3 className="text-base font-semibold">
-                {matchup.teamA} {formatPoints(totals.a)} – {formatPoints(totals.b)} {matchup.teamB}
-                <span className="ml-2 text-sm font-normal text-zinc-500">{totals.live ? "so far" : "final"}</span>
-              </h3>
+              <>
+                <h3 className="text-base font-semibold">
+                  {matchup.teamA} {formatPoints(totals.a)} – {formatPoints(totals.b)} {matchup.teamB}
+                  <span className="ml-2 text-sm font-normal text-zinc-500">{totals.live ? "so far" : "final"}</span>
+                </h3>
+                <RoundScores teamA={matchup.teamA} teamB={matchup.teamB} matches={matches} />
+              </>
             )}
-            {finished.length > 0 && (
-              <ul className="grid gap-2 sm:grid-cols-2">
-                {finished.map((m) => (
-                  <li
-                    key={m.id}
-                    className="flex flex-col rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                  >
-                    <span className="font-semibold">{statusHeadline(matchStatus(m.results), m.sideA, m.sideB)}</span>
-                    <span className="text-zinc-500">
-                      {[`${m.sideA} vs ${m.sideB}`, m.label].filter(Boolean).join(" · ")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {groupByRound(finished).map(({ round, matches: roundMatches }) => (
+              <div key={round} className="flex flex-col gap-1.5">
+                <h4 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">Round {round}</h4>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {roundMatches.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex flex-col rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    >
+                      <span className="font-semibold">{statusHeadline(matchStatus(m.results), m.sideA, m.sideB)}</span>
+                      <span className="text-zinc-500">
+                        {[`${m.sideA} vs ${m.sideB}`, m.label].filter(Boolean).join(" · ")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         );
       })}

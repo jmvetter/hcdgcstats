@@ -16,6 +16,7 @@ export type ScoringMatch = {
   sideA: string;
   sideB: string;
   holes: number;
+  round: number;
   results: (HoleResult | null)[]; // index 0 is hole 1
   lastHole: number | null; // the hole most recently entered
 };
@@ -38,6 +39,7 @@ type MatchRow = {
   side_a: string;
   side_b: string;
   holes: number;
+  round: number;
 };
 
 function withResults(rows: MatchRow[]): ScoringMatch[] {
@@ -64,13 +66,14 @@ function withResults(rows: MatchRow[]): ScoringMatch[] {
       sideA: r.side_a,
       sideB: r.side_b,
       holes: r.holes,
+      round: r.round,
       results,
       lastHole,
     };
   });
 }
 
-const MATCH_COLS = "id, event_id, matchup_id, label, side_a, side_b, holes";
+const MATCH_COLS = "id, event_id, matchup_id, label, side_a, side_b, holes, round";
 
 // Every event with its matchups and matches, newest first.
 export function listScoringEvents(): ScoringEvent[] {
@@ -80,7 +83,7 @@ export function listScoringEvents(): ScoringEvent[] {
   const matchups = db
     .prepare("SELECT id, event_id, team_a, team_b FROM mp_matchups ORDER BY id")
     .all() as { id: number; event_id: number; team_a: string; team_b: string }[];
-  const matches = withResults(db.prepare(`SELECT ${MATCH_COLS} FROM mp_matches ORDER BY id`).all() as MatchRow[]);
+  const matches = withResults(db.prepare(`SELECT ${MATCH_COLS} FROM mp_matches ORDER BY round, id`).all() as MatchRow[]);
   return events.map((e) => ({
     ...e,
     matchups: matchups
@@ -153,14 +156,25 @@ export function createMatch(input: {
   sideA: string;
   sideB: string;
   holes: number;
+  round: number;
 }): number {
   const code = String(randomInt(0, 10000)).padStart(4, "0");
   const r = db
     .prepare(
-      `INSERT INTO mp_matches (event_id, matchup_id, label, side_a, side_b, holes, code, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mp_matches (event_id, matchup_id, label, side_a, side_b, holes, round, code, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(input.eventId, input.matchupId, input.label, input.sideA, input.sideB, input.holes, code, new Date().toISOString());
+    .run(
+      input.eventId,
+      input.matchupId,
+      input.label,
+      input.sideA,
+      input.sideB,
+      input.holes,
+      input.round,
+      code,
+      new Date().toISOString(),
+    );
   return Number(r.lastInsertRowid);
 }
 

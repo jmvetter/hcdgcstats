@@ -120,7 +120,9 @@ function EventSection({
                         {m.sideA} vs {m.sideB}
                       </Link>
                       <span className="block text-xs text-zinc-500">
-                        {[m.label, matchupName(m.matchupId), `${m.holes} holes`].filter(Boolean).join(" · ")}
+                        {[`Round ${m.round}`, m.label, matchupName(m.matchupId), `${m.holes} holes`]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
@@ -141,7 +143,12 @@ function EventSection({
         )}
         <div className="mt-2 rounded-md border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
           <h4 className="mb-3 text-sm font-semibold">Add a match</h4>
-          <NewMatchForm eventId={event.id} matchups={event.matchups} players={players} />
+          <NewMatchForm
+            eventId={event.id}
+            matchups={event.matchups}
+            players={players}
+            lastRound={Math.max(1, ...event.matches.map((m) => m.round))}
+          />
         </div>
       </div>
     </section>

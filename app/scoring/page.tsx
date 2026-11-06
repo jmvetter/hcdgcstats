@@ -3,7 +3,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { AutoRefresh } from "@/app/components/auto-refresh";
 import { formatDate } from "@/lib/format";
-import { matchStatus, statusDetail, statusHeadline, teamTotals } from "@/lib/match-status";
+import { RoundScores } from "@/app/components/round-scores";
+import { groupByRound, matchStatus, statusDetail, statusHeadline, teamTotals } from "@/lib/match-status";
 import { formatPoints } from "@/lib/match-play";
 import { listScoringEvents, type ScoringMatch, type ScoringMatchup } from "@/lib/scoring";
 
@@ -38,7 +39,7 @@ export default async function ScoringPage() {
             {event.matchups.map((mu) => (
               <MatchupBlock key={mu.id} matchup={mu} matches={event.matches.filter((m) => m.matchupId === mu.id)} />
             ))}
-            {loose.length > 0 && <MatchList matches={loose} />}
+            {loose.length > 0 && <RoundGroups matches={loose} />}
           </section>
         );
       })}
@@ -60,7 +61,38 @@ function MatchupBlock({ matchup, matches }: { matchup: ScoringMatchup; matches: 
           {matches.length === 0 ? "No matches yet" : live ? `${live} of ${matches.length} matches still playing` : "Final"}
         </p>
       </div>
-      {matches.length > 0 && <MatchList matches={matches} />}
+      {matches.length > 0 && (
+        <>
+          <RoundScores teamA={matchup.teamA} teamB={matchup.teamB} matches={matches} />
+          <RoundGroups matches={matches} matchup={matchup} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Matches under a heading per round, with that round's team score when the
+// matches belong to a team matchup.
+function RoundGroups({ matches, matchup }: { matches: ScoringMatch[]; matchup?: ScoringMatchup }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {groupByRound(matches).map(({ round, matches }) => {
+        const t = teamTotals(matches);
+        return (
+          <div key={round} className="flex flex-col gap-1.5">
+            <h3 className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
+              <span className="font-semibold">Round {round}</span>
+              {matchup && (
+                <span className="text-zinc-500">
+                  {matchup.teamA} {formatPoints(t.a)} – {formatPoints(t.b)} {matchup.teamB}
+                  {t.live ? " · playing" : " · final"}
+                </span>
+              )}
+            </h3>
+            <MatchList matches={matches} />
+          </div>
+        );
+      })}
     </div>
   );
 }

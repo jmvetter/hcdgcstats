@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS mp_matches (
   side_a TEXT NOT NULL,
   side_b TEXT NOT NULL,
   holes INTEGER NOT NULL DEFAULT 18,
+  round INTEGER NOT NULL DEFAULT 1, -- which round of the event the match belongs to
   code TEXT NOT NULL, -- given to the card so they can score the match
   created_at TEXT NOT NULL
 );
@@ -171,6 +172,9 @@ function migrate(db: DatabaseSync) {
     db.exec("ALTER TABLE layouts ADD COLUMN source_name TEXT");
     db.exec("UPDATE layouts SET source_name = name");
   }
+  const matchCols = (db.prepare("PRAGMA table_info(mp_matches)").all() as { name: string }[]).map((c) => c.name);
+  // Matches set up before rounds existed count as round 1.
+  if (!matchCols.includes("round")) db.exec("ALTER TABLE mp_matches ADD COLUMN round INTEGER NOT NULL DEFAULT 1");
 }
 
 // Reuse one connection across hot reloads in dev.

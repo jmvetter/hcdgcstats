@@ -72,7 +72,7 @@ export function Scorecard({
           ← All matches
         </Link>
         <p className="text-sm text-zinc-500">
-          {[eventName, teams && `${teams.a} vs ${teams.b}`, match.label].filter(Boolean).join(" · ")}
+          {[eventName, `Round ${match.round}`, teams && `${teams.a} vs ${teams.b}`, match.label].filter(Boolean).join(" · ")}
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
           <span className={SIDE.A.text}>{match.sideA}</span>
