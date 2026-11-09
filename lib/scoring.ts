@@ -3,7 +3,7 @@ import { randomInt, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { isAdmin } from "./auth";
 import { db } from "./db";
-import { matchStatus, type HoleResult } from "./match-status";
+import { matchStatus, type HoleInfo, type HoleResult } from "./match-status";
 
 // Live match play scoring: events, team matchups and matches set up on the
 // admin page, scored hole by hole on the Scoring tab.
@@ -17,7 +17,11 @@ export type ScoringMatch = {
   sideB: string;
   holes: number;
   round: number;
-  results: (HoleResult | null)[]; // index 0 is hole 1
+  layoutId: string | null;
+  layoutName: string | null; // "Course · Layout"
+  layoutHoles: HoleInfo[] | null; // the layout's holes, in course order
+  startHole: number | null; // the layout hole the card started on (1-based)
+  results: (HoleResult | null)[]; // index 0 is the first hole played (see playOrder)
   lastHole: number | null; // the hole most recently entered
 };
 
@@ -40,7 +44,28 @@ type MatchRow = {
   side_b: string;
   holes: number;
   round: number;
+  layout_id: string | null;
+  start_hole: number | null;
 };
+
+type LayoutInfo = { name: string; holes: HoleInfo[] | null };
+
+function layoutsById(ids: string[]): Map<string, LayoutInfo> {
+  if (ids.length === 0) return new Map();
+  const rows = db
+    .prepare(`SELECT id, course, name, holes, hole_details FROM layouts WHERE id IN (${ids.map(() => "?").join(",")})`)
+    .all(...ids) as { id: string; course: string; name: string; holes: number | null; hole_details: string | null }[];
+  return new Map(
+    rows.map((r) => {
+      const details = r.hole_details
+        ? (JSON.parse(r.hole_details) as { label: string; par: number | null }[]).map((h) => ({ label: h.label, par: h.par }))
+        : r.holes
+          ? Array.from({ length: r.holes }, (_, i) => ({ label: String(i + 1), par: null }))
+          : null;
+      return [r.id, { name: `${r.course} · ${r.name}`, holes: details }];
+    }),
+  );
+}
 
 function withResults(rows: MatchRow[]): ScoringMatch[] {
   if (rows.length === 0) return [];
@@ -50,7 +75,9 @@ function withResults(rows: MatchRow[]): ScoringMatch[] {
        WHERE match_id IN (${rows.map(() => "?").join(",")}) ORDER BY updated_at`,
     )
     .all(...rows.map((r) => r.id)) as { match_id: number; hole: number; result: HoleResult }[];
+  const layouts = layoutsById([...new Set(rows.map((r) => r.layout_id).filter((id): id is string => id !== null))]);
   return rows.map((r) => {
+    const layout = r.layout_id !== null ? layouts.get(r.layout_id) : undefined;
     const results: (HoleResult | null)[] = Array.from({ length: r.holes }, () => null);
     let lastHole: number | null = null;
     for (const h of holes) {
@@ -67,13 +94,17 @@ function withResults(rows: MatchRow[]): ScoringMatch[] {
       sideB: r.side_b,
       holes: r.holes,
       round: r.round,
+      layoutId: r.layout_id,
+      layoutName: layout?.name ?? null,
+      layoutHoles: layout?.holes ?? null,
+      startHole: r.start_hole,
       results,
       lastHole,
     };
   });
 }
 
-const MATCH_COLS = "id, event_id, matchup_id, label, side_a, side_b, holes, round";
+const MATCH_COLS = "id, event_id, matchup_id, label, side_a, side_b, holes, round, layout_id, start_hole";
 
 // Every event with its matchups and matches, newest first.
 export function listScoringEvents(): ScoringEvent[] {
@@ -141,6 +172,20 @@ export function listPlayedPlayerNames(): string[] {
   return rows.map((r) => r.name);
 }
 
+export type MatchLayout = { id: string; name: string; holes: number };
+
+// Course layouts with a known hole count, for the match setup pickers.
+export function listMatchLayouts(): MatchLayout[] {
+  const rows = db
+    .prepare(
+      `SELECT id, course, name, COALESCE(json_array_length(hole_details), holes) AS holes FROM layouts
+       WHERE COALESCE(json_array_length(hole_details), holes) > 0
+       ORDER BY course COLLATE NOCASE, name COLLATE NOCASE`,
+    )
+    .all() as { id: string; course: string; name: string; holes: number }[];
+  return rows.map((r) => ({ id: r.id, name: `${r.course} · ${r.name}`, holes: r.holes }));
+}
+
 export function createMatchup(eventId: number, teamA: string, teamB: string) {
   db.prepare("INSERT INTO mp_matchups (event_id, team_a, team_b) VALUES (?, ?, ?)").run(eventId, teamA, teamB);
 }
@@ -157,12 +202,13 @@ export function createMatch(input: {
   sideB: string;
   holes: number;
   round: number;
+  layoutId: string | null;
 }): number {
   const code = String(randomInt(0, 10000)).padStart(4, "0");
   const r = db
     .prepare(
-      `INSERT INTO mp_matches (event_id, matchup_id, label, side_a, side_b, holes, round, code, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mp_matches (event_id, matchup_id, label, side_a, side_b, holes, round, layout_id, code, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.eventId,
@@ -172,14 +218,44 @@ export function createMatch(input: {
       input.sideB,
       input.holes,
       input.round,
+      input.layoutId,
       code,
       new Date().toISOString(),
     );
   return Number(r.lastInsertRowid);
 }
 
-export function updateMatch(id: number, input: { matchupId: number | null; round: number }) {
-  db.prepare("UPDATE mp_matches SET matchup_id = ?, round = ? WHERE id = ?").run(input.matchupId, input.round, id);
+// Moves a match to another round, team matchup or layout. A starting hole past
+// the end of a new, shorter layout is cleared.
+export function updateMatch(id: number, input: { matchupId: number | null; round: number; layoutId: string | null }) {
+  db.prepare("UPDATE mp_matches SET matchup_id = ?, round = ?, layout_id = ? WHERE id = ?").run(
+    input.matchupId,
+    input.round,
+    input.layoutId,
+    id,
+  );
+  const match = getScoringMatch(id);
+  if (match?.startHole && match.startHole > (match.layoutHoles?.length || match.holes)) {
+    db.prepare("UPDATE mp_matches SET start_hole = NULL WHERE id = ?").run(id);
+  }
+}
+
+export function layoutExists(id: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM layouts WHERE id = ?").get(id));
+}
+
+// Sets (or clears, with null) the hole a card starts on. It can only change
+// before any hole is scored, since scores are kept in the order played.
+export function setStartHole(matchId: number, startHole: number | null): { error?: string } {
+  const match = getScoringMatch(matchId);
+  if (!match) return { error: "That match no longer exists." };
+  if (match.results.some((r) => r !== null)) return { error: "Holes are already scored, so the starting hole can't change." };
+  const size = match.layoutHoles?.length || match.holes;
+  if (startHole !== null && (!Number.isInteger(startHole) || startHole < 1 || startHole > size)) {
+    return { error: "Pick a hole on this course." };
+  }
+  db.prepare("UPDATE mp_matches SET start_hole = ? WHERE id = ?").run(startHole, matchId);
+  return {};
 }
 
 export function deleteMatch(id: number) {

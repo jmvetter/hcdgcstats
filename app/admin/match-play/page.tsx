@@ -4,8 +4,15 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { matchStatus, statusHeadline } from "@/lib/match-status";
-import { listMatchCodes, listPlayedPlayerNames, listScoringEvents, type ScoringEvent } from "@/lib/scoring";
+import { matchStatus, playOrder, statusHeadline } from "@/lib/match-status";
+import {
+  listMatchCodes,
+  listMatchLayouts,
+  listPlayedPlayerNames,
+  listScoringEvents,
+  type MatchLayout,
+  type ScoringEvent,
+} from "@/lib/scoring";
 import { deleteEventAction, deleteMatchAction, deleteMatchupAction } from "./actions";
 import { ConfirmButton, MatchPlacement, NewEventForm, NewMatchForm, NewMatchupForm } from "./forms";
 
@@ -20,6 +27,7 @@ export default async function AdminMatchPlayPage() {
   const events = listScoringEvents();
   const codes = listMatchCodes();
   const players = listPlayedPlayerNames();
+  const layouts = listMatchLayouts();
 
   return (
     <div className="flex flex-col gap-8">
@@ -44,7 +52,7 @@ export default async function AdminMatchPlayPage() {
       </section>
 
       {events.map((event) => (
-        <EventSection key={event.id} event={event} codes={codes} players={players} />
+        <EventSection key={event.id} event={event} codes={codes} players={players} layouts={layouts} />
       ))}
     </div>
   );
@@ -54,12 +62,18 @@ function EventSection({
   event,
   codes,
   players,
+  layouts,
 }: {
   event: ScoringEvent;
   codes: Map<number, string>;
   players: string[];
+  layouts: MatchLayout[];
 }) {
   const lastRound = Math.max(1, ...event.matches.map((m) => m.round));
+  const lastLayoutId = event.matches.reduce<{ id: number; layoutId: string | null } | null>(
+    (latest, m) => (!latest || m.id > latest.id ? m : latest),
+    null,
+  )?.layoutId ?? null;
 
   return (
     <section className="flex flex-col gap-5 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
@@ -117,15 +131,23 @@ function EventSection({
                         {m.sideA} vs {m.sideB}
                       </Link>
                       <span className="block text-xs text-zinc-500">
-                        {[m.label, `${m.holes} holes`].filter(Boolean).join(" · ")}
+                        {[
+                          m.label,
+                          `${m.holes} holes`,
+                          m.startHole !== null && `starts on ${playOrder(1, m.startHole, m.layoutHoles)[0].label}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                       <MatchPlacement
-                        key={`${m.id}-${m.round}-${m.matchupId}`}
+                        key={`${m.id}-${m.round}-${m.matchupId}-${m.layoutId}`}
                         matchId={m.id}
                         matchupId={m.matchupId}
                         round={m.round}
+                        layoutId={m.layoutId}
                         matchups={event.matchups}
                         rounds={lastRound}
+                        layouts={layouts}
                       />
                     </td>
                     <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
@@ -151,6 +173,8 @@ function EventSection({
             matchups={event.matchups}
             players={players}
             lastRound={lastRound}
+            layouts={layouts}
+            lastLayoutId={lastLayoutId}
           />
         </div>
       </div>

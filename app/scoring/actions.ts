@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { HoleResult } from "@/lib/match-status";
-import { canScoreMatch, rememberMatchCode, setHole } from "@/lib/scoring";
+import { canScoreMatch, rememberMatchCode, setHole, setStartHole } from "@/lib/scoring";
 
 export type UnlockState = { error?: string };
 
@@ -25,6 +25,14 @@ export async function setHoleAction(matchId: number, hole: number, result: HoleR
   if (result !== null && !["A", "B", "H"].includes(result)) return { error: "Unknown result." };
   if (!(await canScoreMatch(matchId))) return { error: "Enter the match code to keep score." };
   const outcome = setHole(matchId, hole, result);
+  if (!outcome.error) refresh(matchId);
+  return outcome;
+}
+
+// The card picks the hole they start on (or clears it, with null) before scoring.
+export async function setStartHoleAction(matchId: number, startHole: number | null): Promise<{ error?: string }> {
+  if (!(await canScoreMatch(matchId))) return { error: "Enter the match code to keep score." };
+  const outcome = setStartHole(matchId, startHole);
   if (!outcome.error) refresh(matchId);
   return outcome;
 }

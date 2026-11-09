@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useOffline } from "next/offline";
 import { useActionState, useOptimistic, useState, useTransition } from "react";
-import { matchStatus, shortSide, statusDetail, statusHeadline, type HoleResult } from "@/lib/match-status";
+import { matchStatus, playOrder, shortSide, statusDetail, statusHeadline, type HoleInfo, type HoleResult } from "@/lib/match-status";
 import type { ScoringMatch } from "@/lib/scoring";
-import { setHoleAction, unlockMatchAction, type UnlockState } from "../actions";
+import { setHoleAction, setStartHoleAction, unlockMatchAction, type UnlockState } from "../actions";
 
 // Side A is blue and side B orange throughout, so a glance at the holes shows who's winning.
 const SIDE = {
@@ -46,6 +46,13 @@ export function Scorecard({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(0);
 
+  const holes = playOrder(match.holes, match.startHole, match.layoutHoles);
+  const label = (hole: number) => holes[hole - 1]?.label ?? String(hole);
+  const par = (hole: number) => holes[hole - 1]?.par;
+  const anyScored = results.some((r) => r !== null);
+  // A match that hasn't started asks for the starting hole first. Matches
+  // scored before starting holes existed carry on as they were.
+  const needsStart = canScore && match.startHole === null && !anyScored;
   const status = matchStatus(results);
   const headline = statusHeadline(status, match.sideA, match.sideB);
   const current = selected !== null ? results[selected - 1] : null;
@@ -74,6 +81,7 @@ export function Scorecard({
         <p className="text-sm text-zinc-500">
           {[eventName, `Round ${match.round}`, teams && `${teams.a} vs ${teams.b}`, match.label].filter(Boolean).join(" · ")}
         </p>
+        {match.layoutName && <p className="text-sm text-zinc-500">{match.layoutName}</p>}
         <h1 className="text-2xl font-semibold tracking-tight">
           <span className={SIDE.A.text}>{match.sideA}</span>
           <span className="px-2 text-zinc-400">vs</span>
@@ -98,19 +106,26 @@ export function Scorecard({
         </p>
       )}
 
+      {needsStart && <StartHolePicker matchId={match.id} holes={match.layoutHoles ?? playOrder(match.holes, null, null)} />}
+
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-zinc-500">Holes</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-zinc-500">
+            Holes{match.startHole !== null && <span className="font-normal"> · started on hole {label(1)}</span>}
+          </h2>
+          {canScore && match.startHole !== null && !anyScored && <ChangeStartButton matchId={match.id} />}
+        </div>
         <ol className="grid grid-cols-6 gap-1.5 sm:grid-cols-9">
           {results.map((r, i) => {
             const hole = i + 1;
-            const isSelected = canScore && hole === selected;
+            const isSelected = canScore && !needsStart && hole === selected;
             return (
               <li key={hole}>
                 <button
                   type="button"
-                  disabled={!canScore}
+                  disabled={!canScore || needsStart}
                   onClick={() => setSelected(hole)}
-                  aria-label={`Hole ${hole}: ${r === "A" ? match.sideA : r === "B" ? match.sideB : r === "H" ? "push" : "not played"}`}
+                  aria-label={`Hole ${label(hole)}: ${r === "A" ? match.sideA : r === "B" ? match.sideB : r === "H" ? "push" : "not played"}`}
                   aria-pressed={isSelected}
                   className={`flex h-12 w-full flex-col items-center justify-center rounded-md border text-sm tabular-nums ${
                     r === "A" || r === "B"
@@ -120,7 +135,7 @@ export function Scorecard({
                         : "border-zinc-300 dark:border-zinc-700"
                   } ${isSelected ? "ring-2 ring-black ring-offset-2 dark:ring-white dark:ring-offset-black" : ""}`}
                 >
-                  <span className="font-semibold">{hole}</span>
+                  <span className="font-semibold">{label(hole)}</span>
                   <span className="text-[10px] leading-none">{r === "A" ? "A" : r === "B" ? "B" : r === "H" ? "push" : ""}</span>
                 </button>
               </li>
@@ -130,10 +145,12 @@ export function Scorecard({
       </div>
 
       {canScore ? (
-        selected !== null && (
+        selected !== null &&
+        !needsStart && (
           <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <p className="text-center text-lg font-semibold">
-              Hole {selected}
+              Hole {label(selected)}
+              {par(selected) && <span className="text-sm font-normal text-zinc-500"> · par {par(selected)}</span>}
               {current && <span className="text-sm font-normal text-zinc-500"> · tap to change</span>}
             </p>
             {locked ? (
@@ -149,7 +166,7 @@ export function Scorecard({
             )}
             {current && (
               <button type="button" onClick={() => record(selected, null)} className="self-center text-sm text-zinc-500 hover:underline">
-                Clear hole {selected}
+                Clear hole {label(selected)}
               </button>
             )}
             {error && <p className="text-center text-sm text-red-600">{error}</p>}
@@ -159,6 +176,69 @@ export function Scorecard({
         <UnlockForm matchId={match.id} />
       )}
     </div>
+  );
+}
+
+function StartHolePicker({ matchId, holes }: { matchId: number; holes: HoleInfo[] }) {
+  const [start, setStart] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startSaving] = useTransition();
+  const save = () => {
+    setError(null);
+    startSaving(async () => {
+      const outcome = await setStartHoleAction(matchId, Number(start));
+      if (outcome.error) setError(outcome.error);
+    });
+  };
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (start) save();
+      }}
+      className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+    >
+      <label className="flex flex-col gap-1 text-sm font-medium">
+        Which hole are you starting on?
+        <select
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
+          required
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-3 text-lg dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value="" disabled>
+            Pick the starting hole…
+          </option>
+          {holes.map((h, i) => (
+            <option key={i} value={i + 1}>
+              Hole {h.label}
+              {h.par ? ` · par ${h.par}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        disabled={pending || !start}
+        className="rounded-lg bg-black px-4 py-3 text-base font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
+      >
+        {pending ? "Starting…" : "Start the match"}
+      </button>
+    </form>
+  );
+}
+
+function ChangeStartButton({ matchId }: { matchId: number }) {
+  const [pending, startSaving] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => startSaving(async () => void (await setStartHoleAction(matchId, null)))}
+      className="text-sm text-zinc-500 hover:underline disabled:opacity-50"
+    >
+      Change starting hole
+    </button>
   );
 }
 

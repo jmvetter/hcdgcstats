@@ -83,6 +83,20 @@ export function teamTotals(matches: { results: (HoleResult | null)[] }[]): { a: 
   return { a, b, live };
 }
 
+export type HoleInfo = { label: string; par: number | null };
+
+// The holes of a match in the order they're played, named as on the course.
+// Before a starting hole is picked, hole N of the match is hole N of the
+// layout. Once one is, holes run from it and wrap around the layout (a card on
+// a shotgun start that begins on 7 plays 7, 8, … then 1, 2, …).
+export function playOrder(holes: number, startHole: number | null, layout: HoleInfo[] | null): HoleInfo[] {
+  const size = layout?.length || holes;
+  return Array.from({ length: holes }, (_, i) => {
+    const pos = startHole === null ? i : (startHole - 1 + i) % size;
+    return { label: layout?.[pos]?.label ?? String(pos + 1), par: layout?.[pos]?.par ?? null };
+  });
+}
+
 // Matches grouped by round, in round order.
 export function groupByRound<T extends { round: number }>(matches: T[]): { round: number; matches: T[] }[] {
   const groups = new Map<number, T[]>();

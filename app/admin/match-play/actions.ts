@@ -12,6 +12,7 @@ import {
   getMatchup,
   getScoringEventName,
   getScoringMatch,
+  layoutExists,
   listPlayedPlayerNames,
   updateMatch,
 } from "@/lib/scoring";
@@ -73,6 +74,7 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   const playersB = pick("b");
   const holes = Number(formData.get("holes"));
   const round = Number(formData.get("round"));
+  const layoutId = text(formData, "layoutId") || null;
   if (!getScoringEventName(eventId)) return { error: "That event no longer exists." };
   if (matchupId !== null && getMatchup(matchupId)?.eventId !== eventId) return { error: "Pick a matchup from this event." };
   const all = [...playersA, ...playersB];
@@ -82,19 +84,21 @@ export async function createMatchAction(_prev: FormState, formData: FormData): P
   if (new Set(all).size !== all.length) return { error: "Each player can only be in the match once." };
   if (!Number.isInteger(holes) || holes < 1 || holes > 36) return { error: "Holes should be between 1 and 36." };
   if (!Number.isInteger(round) || round < 1 || round > 9) return { error: "Pick a round." };
+  if (layoutId !== null && !layoutExists(layoutId)) return { error: "Pick a layout from the list." };
   const sideA = playersA.join(" & ");
   const sideB = playersB.join(" & ");
   const label = text(formData, "label") || (doubles ? "Doubles" : "Singles");
-  createMatch({ eventId, matchupId, label, sideA, sideB, holes, round });
+  createMatch({ eventId, matchupId, label, sideA, sideB, holes, round, layoutId });
   refresh();
   return { message: `Added ${sideA} vs ${sideB} to round ${round}.` };
 }
 
-// Moves a match to another round or team matchup; its scores stay.
+// Moves a match to another round, team matchup or layout; its scores stay.
 export async function updateMatchAction(
   matchId: number,
   matchupId: number | null,
   round: number,
+  layoutId: string | null,
 ): Promise<{ error?: string }> {
   await requireAdmin();
   const match = getScoringMatch(matchId);
@@ -103,7 +107,8 @@ export async function updateMatchAction(
     return { error: "Pick a matchup from this event." };
   }
   if (!Number.isInteger(round) || round < 1 || round > 9) return { error: "Pick a round." };
-  updateMatch(matchId, { matchupId, round });
+  if (layoutId !== null && !layoutExists(layoutId)) return { error: "Pick a layout from the list." };
+  updateMatch(matchId, { matchupId, round, layoutId });
   refresh();
   return {};
 }

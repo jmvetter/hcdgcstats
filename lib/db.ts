@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS mp_matches (
   side_b TEXT NOT NULL,
   holes INTEGER NOT NULL DEFAULT 18,
   round INTEGER NOT NULL DEFAULT 1, -- which round of the event the match belongs to
+  layout_id TEXT REFERENCES layouts(id) ON DELETE SET NULL, -- the course layout the match is played on
+  -- The layout hole the card starts on, picked when they start scoring. Once set,
+  -- mp_holes.hole counts holes in the order played (1 is the starting hole).
+  start_hole INTEGER,
   code TEXT NOT NULL, -- given to the card so they can score the match
   created_at TEXT NOT NULL
 );
@@ -175,6 +179,20 @@ function migrate(db: DatabaseSync) {
   const matchCols = (db.prepare("PRAGMA table_info(mp_matches)").all() as { name: string }[]).map((c) => c.name);
   // Matches set up before rounds existed count as round 1.
   if (!matchCols.includes("round")) db.exec("ALTER TABLE mp_matches ADD COLUMN round INTEGER NOT NULL DEFAULT 1");
+  if (!matchCols.includes("layout_id")) {
+    addColumn(db, "ALTER TABLE mp_matches ADD COLUMN layout_id TEXT REFERENCES layouts(id) ON DELETE SET NULL");
+  }
+  if (!matchCols.includes("start_hole")) addColumn(db, "ALTER TABLE mp_matches ADD COLUMN start_hole INTEGER");
+}
+
+// Adds a column, ignoring the error when another process (a parallel build
+// worker, say) added it between our check and this call.
+function addColumn(db: DatabaseSync, sql: string) {
+  try {
+    db.exec(sql);
+  } catch (err) {
+    if (!(err instanceof Error && /duplicate column/i.test(err.message))) throw err;
+  }
 }
 
 // Reuse one connection across hot reloads in dev.

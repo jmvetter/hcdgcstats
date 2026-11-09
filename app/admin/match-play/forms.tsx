@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useRef, useState, useTransition } from "react";
-import type { ScoringMatchup } from "@/lib/scoring";
+import type { MatchLayout, ScoringMatchup } from "@/lib/scoring";
 import { createEventAction, createMatchAction, createMatchupAction, updateMatchAction, type FormState } from "./actions";
 
 const input =
@@ -160,12 +160,17 @@ export function NewMatchForm({
   matchups,
   players,
   lastRound,
+  layouts,
+  lastLayoutId,
 }: {
   eventId: number;
   matchups: ScoringMatchup[];
   players: string[];
   // Highest round that already has matches; new matches start there.
   lastRound: number;
+  layouts: MatchLayout[];
+  // The layout of the event's latest match, so the next one defaults to it.
+  lastLayoutId: string | null;
 }) {
   // After a match is added only the players and label clear (by remounting
   // them); the matchup, round, format and holes stay for the next match.
@@ -192,6 +197,17 @@ export function NewMatchForm({
             </select>
           </label>
         )}
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          Layout
+          <select name="layoutId" defaultValue={lastLayoutId ?? ""} className={input}>
+            <option value="">No layout (holes numbered 1, 2, 3…)</option>
+            {layouts.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name} ({l.holes} holes)
+              </option>
+            ))}
+          </select>
+        </label>
         <fieldset className="flex flex-col gap-1 text-sm">
           <legend className="mb-1">Round</legend>
           <input type="hidden" name="round" value={round} />
@@ -244,23 +260,27 @@ export function MatchPlacement({
   matchId,
   matchupId,
   round,
+  layoutId,
   matchups,
   rounds,
+  layouts,
 }: {
   matchId: number;
   matchupId: number | null;
   round: number;
+  layoutId: string | null;
   matchups: ScoringMatchup[];
   rounds: number;
+  layouts: MatchLayout[];
 }) {
-  const [value, setValue] = useState({ matchupId, round });
+  const [value, setValue] = useState({ matchupId, round, layoutId });
   const [error, setError] = useState<string | null>(null);
   const [pending, startSaving] = useTransition();
-  const save = (next: { matchupId: number | null; round: number }) => {
+  const save = (next: typeof value) => {
     setValue(next);
     setError(null);
     startSaving(async () => {
-      const result = await updateMatchAction(matchId, next.matchupId, next.round);
+      const result = await updateMatchAction(matchId, next.matchupId, next.round, next.layoutId);
       if (result.error) setError(result.error);
     });
   };
@@ -295,6 +315,19 @@ export function MatchPlacement({
           ))}
         </select>
       )}
+      <select
+        aria-label="Layout"
+        value={value.layoutId ?? ""}
+        onChange={(e) => save({ ...value, layoutId: e.target.value || null })}
+        className={`${small} max-w-full`}
+      >
+        <option value="">No layout</option>
+        {layouts.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.name} ({l.holes})
+          </option>
+        ))}
+      </select>
       {pending && <span>Saving…</span>}
       {error && <span className="text-red-600">{error}</span>}
     </span>
