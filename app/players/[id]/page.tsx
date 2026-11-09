@@ -18,6 +18,8 @@ import {
 } from "@/lib/data";
 import { PdgaLink } from "@/app/components/pdga-link";
 import { formatDate, formatToPar, pdgaEventUrl, pdgaPlayerUrl } from "@/lib/format";
+import { formatPoints } from "@/lib/match-play";
+import { getPlayerMatchPlay, type MatchOutcome, type PlayerMatchPlay } from "@/lib/player-match-play";
 
 export async function generateMetadata({
   params,
@@ -47,6 +49,7 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
     ),
   );
   const stats = computeStats(finishes, ratings);
+  const matchPlay = getPlayerMatchPlay(player);
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
 
   return (
@@ -103,6 +106,8 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         <h2 className="text-lg font-semibold">Scoring</h2>
         <ScoringBreakdownBar data={scoring} />
       </section>
+
+      {matchPlay.matches.length > 0 && <MatchPlaySection data={matchPlay} />}
 
       {layouts.length > 0 && (
         <section className="flex flex-col gap-3">
@@ -225,5 +230,85 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
       <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
       {sub && <dd className="text-xs text-zinc-500">{sub}</dd>}
     </div>
+  );
+}
+
+const OUTCOME: Record<MatchOutcome | "live", { label: string; tone: string }> = {
+  W: { label: "Won", tone: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300" },
+  L: { label: "Lost", tone: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" },
+  H: { label: "Halved", tone: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
+  live: { label: "Playing", tone: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+};
+
+function MatchPlaySection({ data }: { data: PlayerMatchPlay }) {
+  const decided = data.wins + data.losses + data.halves;
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Match play</h2>
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat
+          label="Record"
+          value={`${data.wins}–${data.losses}${data.halves ? `–${data.halves}` : ""}`}
+          sub={data.halves ? "won–lost–halved" : "won–lost"}
+        />
+        <Stat
+          label="Points"
+          value={formatPoints(data.points)}
+          sub={decided ? `of ${decided} ${decided === 1 ? "match" : "matches"}` : undefined}
+        />
+        <Stat
+          label="Win rate"
+          value={decided ? `${Math.round((data.points / decided) * 100)}%` : "—"}
+          sub="halves count half"
+        />
+        <Stat
+          label="Holes"
+          value={data.holes ? `${data.holes.won}–${data.holes.lost}–${data.holes.halved}` : "—"}
+          sub="won–lost–halved, scored matches"
+        />
+      </dl>
+      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <table className="w-full min-w-[40rem] text-left text-sm">
+          <thead className="border-b border-zinc-200 text-zinc-500 dark:border-zinc-800">
+            <tr>
+              <th className="px-4 py-3 font-medium">Event</th>
+              <th className="px-4 py-3 font-medium">Format</th>
+              <th className="px-4 py-3 font-medium">Opponent</th>
+              <th className="px-4 py-3 font-medium">Result</th>
+              <th className="px-4 py-3 text-right font-medium">Holes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+            {data.matches.map((m) => {
+              const outcome = OUTCOME[m.outcome ?? "live"];
+              return (
+                <tr key={m.key}>
+                  <td className="px-4 py-3">
+                    <Link href={m.href} className="hover:underline">
+                      {m.eventName}
+                    </Link>
+                    <span className="block text-xs text-zinc-500">
+                      {[m.stage, m.team].filter(Boolean).join(" · ")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {m.format}
+                    {m.partner && <span className="block text-xs text-zinc-500">with {m.partner}</span>}
+                  </td>
+                  <td className="px-4 py-3">{m.opponent}</td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${outcome.tone}`}>{outcome.label}</span>
+                    {m.score && m.outcome !== "H" && <span className="ml-2 tabular-nums">{m.score}</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                    {m.holes ? `${m.holes.won}–${m.holes.lost}–${m.holes.halved}` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
