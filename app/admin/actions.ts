@@ -18,6 +18,7 @@ import {
 } from "@/lib/pdga";
 import { fetchTournament, parseTournamentId, type PdgaTournament } from "@/lib/pdga-live";
 import { parseUdiscExport, type ParsedExport } from "@/lib/udisc";
+import { fetchUdiscEvent, parseUdiscEventUrl } from "@/lib/udisc-event";
 
 export type LoginState = { error?: string };
 
@@ -34,16 +35,71 @@ export async function logoutAction(): Promise<void> {
   revalidatePath("/admin");
 }
 
-export type PreviewState = { preview?: ParsedExport; fileName?: string; error?: string };
+export type PreviewState = {
+  preview?: ParsedExport;
+  fileName?: string;
+  // The layout UDisc's event page lists for each tab of the export, when a
+  // link was given and the tab's divisions all played the same one.
+  udiscLayouts?: (LayoutInput | null)[];
+  error?: string;
+};
 
 export async function previewUdiscAction(_prev: PreviewState, formData: FormData): Promise<PreviewState> {
   await requireAdmin();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a UDisc export file." };
+  let preview: ParsedExport;
   try {
-    return { preview: await parseUdiscExport(file), fileName: file.name };
+    preview = await parseUdiscExport(file);
   } catch (err) {
     return { error: `Couldn't read ${file.name}: ${(err as Error).message}` };
+  }
+
+  // The export has no layout details; the event's UDisc page does.
+  const link = String(formData.get("eventUrl") ?? "").trim();
+  if (!link) return { preview, fileName: file.name };
+  const slug = parseUdiscEventUrl(link);
+  if (!slug) {
+    preview.warnings.push("That doesn't look like a udisc.com/events/… link, so no layouts were loaded.");
+    return { preview, fileName: file.name };
+  }
+  try {
+    const event = await fetchUdiscEvent(slug, [...new Set(preview.sheets.map((sh) => sh.round))]);
+    preview.suggested = {
+      name: event.name ?? preview.suggested.name,
+      date: event.date ?? preview.suggested.date,
+      doubles: event.teams || preview.suggested.doubles,
+    };
+    const udiscLayouts = preview.sheets.map((sh) => {
+      const byDivision = event.layouts.get(sh.round) ?? {};
+      const found = sh.divisions.map((d) => byDivision[d]);
+      const ids = new Set(found.map((l) => l?.id));
+      if (found.length > 0 && ids.size === 1 && found[0]) return found[0];
+      preview.warnings.push(
+        found.some(Boolean)
+          ? `${sh.name}: its divisions played different layouts on UDisc, so choose one by hand.`
+          : `${sh.name}: no layout found on UDisc for ${sh.divisions.join(", ") || "its entries"}.`,
+      );
+      return null;
+    });
+    return { preview, fileName: file.name, udiscLayouts };
+  } catch (err) {
+    preview.warnings.push(`Couldn't load layouts from UDisc: ${(err as Error).message}`);
+    return { preview, fileName: file.name };
+  }
+}
+
+// A layout the preview read from UDisc, sent back in a hidden field.
+function readUdiscLayout(value: FormDataEntryValue | null): LayoutInput | null {
+  try {
+    const l = JSON.parse(String(value ?? ""));
+    const ok =
+      typeof l?.id === "string" && l.id.startsWith("udisc-") &&
+      typeof l.course === "string" && l.course && typeof l.name === "string" && l.name &&
+      Array.isArray(l.holeDetails);
+    return ok ? { ...l, pdgaLayoutId: null } : null;
+  } catch {
+    return null;
   }
 }
 
@@ -83,30 +139,63 @@ export async function importUdiscAction(_prev: ImportState, formData: FormData):
   const rows = readRows(formData);
   if (!rows) return { error: "The preview data was invalid. Upload the file again." };
 
-  // Every round in a UDisc import was played on the layout chosen on the form.
-  let layoutId = String(formData.get("layoutId") ?? "");
-  let course: string | null = null;
-  if (layoutId === "new") {
-    const layoutCourse = String(formData.get("layoutCourse") ?? "").trim();
-    const layoutName = String(formData.get("layoutName") ?? "").trim();
-    if (!layoutCourse || !layoutName) return { error: "Enter the new layout's course and name." };
-    layoutId = createLayout({
-      course: layoutCourse,
-      name: layoutName,
-      holes: optionalInt(formData.get("layoutHoles")),
-      par: optionalInt(formData.get("layoutPar")),
-    });
-    course = layoutCourse;
-  } else {
-    const layout = findLayout(layoutId);
-    if (!layout) return { error: "Choose the layout this event was played on." };
-    course = layout.course;
+  // The form has a layout picker per tab of the export (pools can play
+  // different layouts), with fields suffixed by the tab's index. Everything is
+  // checked before any new layout is created.
+  const sheetCount = Math.max(0, ...rows.flatMap((row) => row.rounds.map((r) => r.sheet ?? 0))) + 1;
+  type Choice = { id: string } | { create: Parameters<typeof createLayout>[0] } | { udisc: LayoutInput } | "same";
+  const choices: Choice[] = [];
+  for (let i = 0; i < sheetCount; i++) {
+    const field = (name: string) => formData.get(`${name}.${i}`);
+    const choice = String(field("layoutId") ?? "");
+    if (choice === "same" && i > 0) {
+      choices.push("same");
+    } else if (choice === "udisc") {
+      const udisc = readUdiscLayout(field("layoutUdisc"));
+      if (!udisc) return { error: "The UDisc layout data was invalid. Upload the file again." };
+      choices.push({ udisc });
+    } else if (choice === "new") {
+      const course = String(field("layoutCourse") ?? "").trim();
+      const layoutName = String(field("layoutName") ?? "").trim();
+      if (!course || !layoutName) return { error: "Enter each new layout's course and name." };
+      choices.push({
+        create: { course, name: layoutName, holes: optionalInt(field("layoutHoles")), par: optionalInt(field("layoutPar")) },
+      });
+    } else if (findLayout(choice)) {
+      choices.push({ id: choice });
+    } else {
+      return { error: "Choose the layout each tab was played on." };
+    }
   }
-  for (const row of rows) for (const r of row.rounds) r.layoutId = layoutId;
+  // Layouts read from UDisc are saved along with the event.
+  const udiscLayouts = new Map<string, LayoutInput>();
+  const layoutIds: string[] = [];
+  const courses = new Set<string | null>();
+  for (const c of choices) {
+    if (c === "same") {
+      layoutIds.push(layoutIds[0]);
+    } else if ("udisc" in c) {
+      udiscLayouts.set(c.udisc.id, c.udisc);
+      layoutIds.push(c.udisc.id);
+      courses.add(c.udisc.course);
+    } else {
+      const id = "id" in c ? c.id : createLayout(c.create);
+      layoutIds.push(id);
+      courses.add(findLayout(id)?.course ?? null);
+    }
+  }
+  for (const row of rows) for (const r of row.rounds) r.layoutId = layoutIds[r.sheet ?? 0];
+  // With more than one course in play, the event isn't at any single one.
+  const course = courses.size === 1 ? [...courses][0] : null;
 
   // Club events make everyone a member, except doubles, whose entries are teams.
   const doubles = type === "Doubles";
-  const summary = saveEventImport({ name, date, course, type }, rows, { markMembers: !doubles, teams: doubles });
+  const summary = saveEventImport(
+    { name, date, course, type },
+    rows,
+    { markMembers: !doubles, teams: doubles },
+    [...udiscLayouts.values()],
+  );
   revalidatePath("/", "layout");
   return { summary };
 }

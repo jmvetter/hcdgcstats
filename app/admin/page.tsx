@@ -91,7 +91,7 @@ export default async function AdminPage() {
 
       <Section
         title="UDisc results"
-        description="In UDisc, open the event and go to Event tools → Leaderboard → Actions → Export. Upload that file here (XLSX or CSV) and pick the layout that was played. You'll see a preview before anything is saved. Importing the same event again replaces its results."
+        description="In UDisc, open the event and go to Event tools → Leaderboard → Actions → Export. Upload that file here (XLSX or CSV) and pick the layout each tab was played on. Add the event's UDisc link to load its layouts, with hole pars and distances, from UDisc. You'll see a preview before anything is saved. Importing the same event again replaces its results."
       >
         <UdiscImport layouts={layouts} />
       </Section>

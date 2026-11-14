@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import { formatToPar } from "@/lib/format";
 import type { LayoutSummary } from "@/lib/data";
 import type { ImportRow } from "@/lib/importer";
+import type { LayoutInput } from "@/lib/layouts";
 import {
   importPdgaTournamentAction,
   importUdiscAction,
@@ -62,9 +63,17 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <form action={previewAction} className="flex flex-wrap items-center gap-3">
+      <form action={previewAction} className="flex flex-col gap-3">
         <input type="file" name="file" accept=".xlsx,.csv" required className="text-sm" />
-        <button disabled={previewing} className={button}>
+        <label className="flex flex-col gap-1 text-sm">
+          UDisc event link (optional, to load the layouts each division played)
+          <input
+            name="eventUrl"
+            placeholder="https://udisc.com/events/…"
+            className={`${input} w-full sm:w-96`}
+          />
+        </label>
+        <button disabled={previewing} className={`${button} self-start`}>
           {previewing ? "Reading…" : "Preview"}
         </button>
       </form>
@@ -98,25 +107,48 @@ export function UdiscImport({ layouts }: { layouts: LayoutSummary[] }) {
 
           <ResultsPreview rows={parsed.rows} />
 
-          <form action={importAction} className="grid gap-3 sm:grid-cols-2">
+          {/* Keyed by file so the prefilled inputs reset when another one is loaded. */}
+          <form key={`${preview.fileName} ${parsed.suggested.name}`} action={importAction} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="rows" value={JSON.stringify(parsed.rows)} />
             <label className="flex flex-col gap-1 text-sm">
               Event name
-              <input name="name" required placeholder="Summer League Week 5" className={input} />
+              <input
+                name="name"
+                required
+                placeholder="Summer League Week 5"
+                defaultValue={parsed.suggested.name ?? ""}
+                className={input}
+              />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Date
-              <input type="date" name="date" required className={input} />
+              <input type="date" name="date" required defaultValue={parsed.suggested.date ?? ""} className={input} />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Type
-              <select name="type" className={input}>
+              <select name="type" defaultValue={parsed.suggested.doubles ? "Doubles" : "League"} className={input}>
                 <option value="League">League (each round counts as a finish)</option>
                 <option value="Tournament">Tournament (final place counts)</option>
                 <option value="Doubles">Doubles (entries are teams, kept apart from players)</option>
               </select>
             </label>
-            <LayoutPicker layouts={layouts} parGuess={parGuess(parsed.rows)} holes={parsed.holeCount} />
+            {/* One picker per tab of the export: pools can play different layouts. */}
+            {parsed.sheets.map((sh, i) => (
+              <LayoutPicker
+                key={i}
+                index={i}
+                layouts={layouts}
+                label={
+                  parsed.sheets.length === 1
+                    ? "Layout played"
+                    : `Layout for ${sh.name} (${[sh.divisions.join(", "), `${sh.entries} entries`, sh.par && `par ${sh.par}`].filter(Boolean).join(" · ")})`
+                }
+                sameAs={i > 0 ? parsed.sheets[0].name : null}
+                udisc={preview.udiscLayouts?.[i] ?? null}
+                parGuess={sh.par}
+                holes={sh.holes}
+              />
+            ))}
             <button disabled={importing || parsed.rows.length === 0} className={`${button} justify-self-start`}>
               {importing ? "Importing…" : `Import ${parsed.rows.length} results`}
             </button>
@@ -293,32 +325,48 @@ export function PdgaRefresh() {
   );
 }
 
-// Most common (score − relative score) across single rounds: the layout's par.
-function parGuess(rows: ImportRow[]): number | null {
-  const counts = new Map<number, number>();
-  for (const r of rows) {
-    for (const rd of r.rounds) {
-      if (rd.toPar !== null) counts.set(rd.score - rd.toPar, (counts.get(rd.score - rd.toPar) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-}
-
+// Field names are suffixed with the tab's index ("layoutId.0") so a form can
+// hold one picker per tab. Tabs after the first can reuse the first tab's layout.
 function LayoutPicker({
+  index,
+  label,
+  sameAs,
+  udisc,
   layouts,
   parGuess,
   holes,
 }: {
+  udisc: LayoutInput | null; // this tab's layout as read from the UDisc event page
+  index: number;
+  label: string;
+  sameAs: string | null;
   layouts: LayoutSummary[];
   parGuess: number | null;
   holes: number | null;
 }) {
-  const [choice, setChoice] = useState(layouts.length ? layouts[0].id : "new");
+  const [choice, setChoice] = useState(
+    udisc ? "udisc" : sameAs ? "same" : layouts.length ? layouts[0].id : "new",
+  );
   return (
     <div className="flex flex-col gap-3 sm:col-span-2">
       <label className="flex flex-col gap-1 text-sm">
-        Layout played
-        <select name="layoutId" value={choice} onChange={(e) => setChoice(e.target.value)} className={input}>
+        {label}
+        <select
+          name={`layoutId.${index}`}
+          value={choice}
+          onChange={(e) => setChoice(e.target.value)}
+          className={input}
+        >
+          {udisc && (
+            <option value="udisc">
+              From UDisc: {udisc.course} – {udisc.name} (
+              {[udisc.par && `par ${udisc.par}`, udisc.holes && `${udisc.holes} holes`, udisc.length && `${udisc.length.toLocaleString("en-US")} ft`]
+                .filter(Boolean)
+                .join(", ")}
+              )
+            </option>
+          )}
+          {sameAs && <option value="same">Same as {sameAs}</option>}
           {layouts.map((l) => (
             <option key={l.id} value={l.id}>
               {l.course} – {l.name}
@@ -328,23 +376,24 @@ function LayoutPicker({
           <option value="new">New layout…</option>
         </select>
       </label>
+      {udisc && <input type="hidden" name={`layoutUdisc.${index}`} value={JSON.stringify(udisc)} />}
       {choice === "new" && (
         <div className="grid gap-3 sm:grid-cols-4">
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             Course
-            <input name="layoutCourse" required className={input} />
+            <input name={`layoutCourse.${index}`} required className={input} />
           </label>
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             Layout name
-            <input name="layoutName" required placeholder="Blue tees" className={input} />
+            <input name={`layoutName.${index}`} required placeholder="Blue tees" className={input} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Holes
-            <input name="layoutHoles" inputMode="numeric" defaultValue={holes ?? 18} className={input} />
+            <input name={`layoutHoles.${index}`} inputMode="numeric" defaultValue={holes ?? 18} className={input} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Par
-            <input name="layoutPar" inputMode="numeric" defaultValue={parGuess ?? ""} className={input} />
+            <input name={`layoutPar.${index}`} inputMode="numeric" defaultValue={parGuess ?? ""} className={input} />
           </label>
         </div>
       )}

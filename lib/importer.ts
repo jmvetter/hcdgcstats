@@ -12,6 +12,10 @@ export type RoundInput = {
   rating: number | null; // PDGA round rating
   holeScores: number[] | null;
   date?: string | null; // YYYY-MM-DD, when the source gives one
+  // UDisc: which tab of the export the round came from (an index into the
+  // parsed sheets). Pools can play different layouts, so the layout is chosen
+  // per tab.
+  sheet?: number;
 };
 
 // One player's result in an event, as read from an import source.

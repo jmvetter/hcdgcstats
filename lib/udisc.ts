@@ -8,17 +8,33 @@ import type { ImportRow, RoundInput } from "./importer";
 // round_relative_score, hole_1, ...). Columns are found by header name rather
 // than position, older CSV exports with different names still work, and the
 // import page shows a preview first.
+//
+// The export says nothing about the layout. Pools can play different layouts,
+// so each round remembers the tab it came from and the import page asks for a
+// layout per tab.
 
 export type ImportField = Exclude<keyof ImportRow, "rounds">;
 
 export type ParsedExport = {
   headers: string[];
   mapping: Record<ImportField, string | null>;
-  sheets: { name: string; round: number; entries: number }[];
+  sheets: SheetInfo[];
+  // Guessed from the file name ("2026-byop-doubles-2026-10-24.xlsx") and the
+  // entries, to prefill the import form.
+  suggested: { name: string | null; date: string | null; doubles: boolean };
   roundCount: number;
   holeCount: number | null; // holes in the hole-by-hole columns, when present
   rows: ImportRow[];
   warnings: string[];
+};
+
+export type SheetInfo = {
+  name: string;
+  round: number;
+  entries: number;
+  divisions: string[];
+  holes: number | null; // hole-by-hole columns in this tab
+  par: number | null; // most common round score − relative score
 };
 
 type Sheet = { name: string; grid: string[][] };
@@ -47,10 +63,10 @@ export async function parseUdiscExport(file: File): Promise<ParsedExport> {
   const sheets = file.name.toLowerCase().endsWith(".csv")
     ? [{ name: "", grid: parseCsv(buf.toString("utf8")) }]
     : await readXlsx(buf);
-  return parseSheets(sheets);
+  return parseSheets(sheets, file.name);
 }
 
-export function parseSheets(sheets: Sheet[]): ParsedExport {
+export function parseSheets(sheets: Sheet[], fileName = ""): ParsedExport {
   const warnings: string[] = [];
   const entries = new Map<string, ImportRow & { latestRound: number }>();
   const sheetInfo: ParsedExport["sheets"] = [];
@@ -101,6 +117,9 @@ export function parseSheets(sheets: Sheet[]): ParsedExport {
 
     // "Pool A - Round 2" → round 2. A sheet without a round number is round 1.
     const round = Number(sheet.name.match(/round\s*(\d+)/i)?.[1] ?? 1);
+    const sheetIndex = sheetInfo.length;
+    const divisions = new Set<string>();
+    const pars: number[] = [];
     let count = 0;
 
     for (const row of sheet.grid.slice(headerIdx + 1)) {
@@ -109,6 +128,7 @@ export function parseSheets(sheets: Sheet[]): ParsedExport {
       if (!name) continue;
       count++;
       const division = at(col.division) || null;
+      if (division) divisions.add(division);
       const key = `${division ?? ""}|${name.toLowerCase()}`;
       const score = parseIntLoose(at(col.score));
       const toPar = parseToPar(at(col.toPar));
@@ -134,15 +154,24 @@ export function parseSheets(sheets: Sheet[]): ParsedExport {
       if (flatRounds.size) {
         for (const [n, c] of [...flatRounds].sort((a, b) => a[0] - b[0])) {
           const s = parseIntLoose(at(c.score ?? -1));
-          if (s !== null) addRound(entry, { round: n, layoutId: null, score: s, toPar: parseToPar(at(c.relative ?? -1)), rating: null, holeScores: null });
+          const tp = parseToPar(at(c.relative ?? -1));
+          if (s !== null) addRound(entry, { round: n, layoutId: null, score: s, toPar: tp, rating: null, holeScores: null, sheet: sheetIndex });
         }
       } else {
         const s = roundScoreCol !== -1 ? parseIntLoose(at(roundScoreCol)) : score;
         const tp = roundToParCol !== -1 ? parseToPar(at(roundToParCol)) : toPar;
-        if (s !== null) addRound(entry, { round, layoutId: null, score: s, toPar: tp, rating: null, holeScores: holes });
+        if (s !== null) addRound(entry, { round, layoutId: null, score: s, toPar: tp, rating: null, holeScores: holes, sheet: sheetIndex });
+        if (s !== null && tp !== null) pars.push(s - tp);
       }
     }
-    sheetInfo.push({ name: sheet.name || "Leaderboard", round, entries: count });
+    sheetInfo.push({
+      name: sheet.name || "Leaderboard",
+      round,
+      entries: count,
+      divisions: [...divisions],
+      holes: holeCols.length || null,
+      par: mostCommon(pars),
+    });
   }
 
   if (!firstHeaders || !firstMapping) {
@@ -165,7 +194,33 @@ export function parseSheets(sheets: Sheet[]): ParsedExport {
   if (rows.length === 0) warnings.push("No player rows found below the header.");
   const roundCount = new Set(rows.flatMap((r) => r.rounds.map((x) => x.round))).size || 1;
 
-  return { headers: firstHeaders, mapping: firstMapping, sheets: sheetInfo, roundCount, holeCount, rows, warnings };
+  const teamRows = rows.filter((r) => r.name.includes(" & ")).length;
+  const suggested = {
+    ...suggestFromFileName(fileName),
+    doubles: /doubles|dubs/i.test(fileName) || (rows.length > 0 && teamRows * 2 > rows.length),
+  };
+
+  return { headers: firstHeaders, mapping: firstMapping, sheets: sheetInfo, suggested, roundCount, holeCount, rows, warnings };
+}
+
+// UDisc names the export "<event-slug>-<YYYY-MM-DD>.xlsx".
+// "2026-byop-glowing-gibbs-doubles-2026-10-24.xlsx" → "2026 Byop Glowing Gibbs Doubles", 2026-10-24.
+function suggestFromFileName(fileName: string): { name: string | null; date: string | null } {
+  const base = fileName.replace(/\.[a-z]+$/i, "").replace(/\s*\(\d+\)$/, "");
+  const m = base.match(/^(.*?)[-_ ]?(\d{4}-\d{2}-\d{2})$/);
+  const slug = m ? m[1] : base;
+  const name = slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+  return { name: name || null, date: m ? m[2] : null };
+}
+
+function mostCommon(nums: number[]): number | null {
+  const counts = new Map<number, number>();
+  for (const n of nums) counts.set(n, (counts.get(n) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
 function addRound(entry: ImportRow, r: RoundInput) {
