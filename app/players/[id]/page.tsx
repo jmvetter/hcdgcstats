@@ -14,7 +14,11 @@ import {
   getPlayerLayouts,
   getPlayerRoundRatings,
   getPlayerScoring,
+  getPlayerTeamFinishes,
+  getTeamMembers,
   parseTypeFilter,
+  type TeamFinish,
+  type TeamMember,
 } from "@/lib/data";
 import { PdgaLink } from "@/app/components/pdga-link";
 import { formatDate, formatToPar, pdgaEventUrl, pdgaPlayerUrl } from "@/lib/format";
@@ -50,6 +54,9 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
   );
   const stats = computeStats(finishes, ratings);
   const matchPlay = getPlayerMatchPlay(player);
+  // A team's page links to its players; a player's page lists their doubles results.
+  const teamMembers = player.team ? await getTeamMembers(player) : [];
+  const doubles = !player.team && (!type || type === "Doubles") ? await getPlayerTeamFinishes(player) : [];
   const location = [player.city, player.stateProv].filter(Boolean).join(", ");
 
   return (
@@ -73,6 +80,11 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
             .filter(Boolean)
             .join(" · ")}
         </p>
+        {teamMembers.length > 0 && (
+          <p className="text-zinc-600 dark:text-zinc-400">
+            Doubles team: <MemberLinks members={teamMembers} />
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -175,6 +187,8 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         </section>
       )}
 
+      {doubles.length > 0 && <DoublesSection finishes={doubles} />}
+
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Finishes</h2>
         {finishes.length === 0 ? (
@@ -220,6 +234,70 @@ export default async function PlayerPage({ params, searchParams }: PageProps<"/p
         )}
       </section>
     </div>
+  );
+}
+
+// Team members by name, linked to their own page when they have one.
+function MemberLinks({ members }: { members: TeamMember[] }) {
+  return members.map((m, i) => (
+    <span key={m.name}>
+      {i > 0 && " & "}
+      {m.player ? (
+        <Link href={`/players/${m.player.id}`} className="font-medium hover:underline">
+          {m.player.name}
+        </Link>
+      ) : (
+        m.name
+      )}
+    </span>
+  ));
+}
+
+function DoublesSection({ finishes }: { finishes: TeamFinish[] }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Doubles</h2>
+      <p className="-mt-2 text-sm text-zinc-500">
+        Results as part of a doubles team. These don&apos;t count toward the stats above.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-zinc-200 text-zinc-500 dark:border-zinc-800">
+            <tr>
+              <th className="px-4 py-3 font-medium">Date</th>
+              <th className="px-4 py-3 font-medium">Event</th>
+              <th className="px-4 py-3 font-medium">Partner</th>
+              <th className="px-4 py-3 font-medium">Div</th>
+              <th className="px-4 py-3 text-right font-medium">Place</th>
+              <th className="px-4 py-3 text-right font-medium">Score</th>
+              <th className="px-4 py-3 text-right font-medium">To par</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+            {finishes.map((r) => (
+              <tr key={`${r.team.id}|${r.eventId}|${r.round ?? "final"}`}>
+                <td className="whitespace-nowrap px-4 py-3">{formatDate(r.date)}</td>
+                <td className="px-4 py-3">
+                  <Link href={`/events/${r.eventId}`} className="hover:underline">
+                    {r.event.name}
+                  </Link>
+                </td>
+                <td className="px-4 py-3">
+                  {r.partners.length > 0 ? <MemberLinks members={r.partners} /> : <span className="text-zinc-500">Solo</span>}
+                  <Link href={`/players/${r.team.id}`} className="ml-2 text-xs text-zinc-500 hover:underline">
+                    team
+                  </Link>
+                </td>
+                <td className="px-4 py-3">{r.division ?? "—"}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{r.place ?? "—"}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{r.score ?? "—"}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{formatToPar(r.toPar)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

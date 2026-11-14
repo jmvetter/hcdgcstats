@@ -224,6 +224,53 @@ export async function getPlayerFinishes(playerId: string, filter: FinishFilter =
   return finishes.sort((a, b) => b.date.localeCompare(a.date) || (b.round ?? 0) - (a.round ?? 0));
 }
 
+// Doubles teams are entries of their own ("Mac Zambrano & Kevin Cheney", or
+// one name for someone who played solo), kept out of individual stats. They
+// are tied to their players' own records by name, the same way match play
+// sides are, so a team links up as soon as a player with that name exists, and
+// renaming either one on the admin page fixes a mismatch.
+export type TeamMember = { name: string; player: { id: string; name: string } | null };
+
+const teamMemberNames = (teamName: string) =>
+  teamName
+    .split(/\s+&\s+/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+function findIndividual(name: string): { id: string; name: string } | null {
+  const row = db
+    .prepare("SELECT id, name FROM players WHERE team = 0 AND name = ? COLLATE NOCASE ORDER BY member DESC LIMIT 1")
+    .get(name) as { id: string; name: string } | undefined;
+  return row ? { id: row.id, name: row.name } : null;
+}
+
+// The players on a doubles team, each with their own record when they have one.
+export async function getTeamMembers(team: Pick<Player, "name">): Promise<TeamMember[]> {
+  await connection();
+  return teamMemberNames(team.name).map((name) => ({ name, player: findIndividual(name) }));
+}
+
+export type TeamFinish = Finish & { team: { id: string; name: string }; partners: TeamMember[] };
+
+// A player's doubles results: the finishes of every team they were on, newest first.
+export async function getPlayerTeamFinishes(player: Pick<Player, "name">): Promise<TeamFinish[]> {
+  await connection();
+  const mine = player.name.trim().toLowerCase();
+  const teams = (db.prepare("SELECT id, name FROM players WHERE team = 1").all() as { id: string; name: string }[]).filter(
+    (t) => teamMemberNames(t.name).some((n) => n.toLowerCase() === mine),
+  );
+  const finishes: TeamFinish[] = [];
+  for (const team of teams) {
+    const partners = teamMemberNames(team.name)
+      .filter((n) => n.toLowerCase() !== mine)
+      .map((name) => ({ name, player: findIndividual(name) }));
+    for (const f of await getPlayerFinishes(team.id)) {
+      finishes.push({ ...f, team: { id: team.id, name: team.name }, partners });
+    }
+  }
+  return finishes.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 const average = (nums: number[]) => (nums.length ? nums.reduce((sum, n) => sum + n, 0) / nums.length : null);
 
 export function computeStats(finishes: Finish[], roundRatings: number[]): PlayerStats {
