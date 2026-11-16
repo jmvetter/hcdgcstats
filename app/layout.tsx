@@ -58,37 +58,37 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </Link>
             <Link
               href="/players"
-              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="-my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Players
             </Link>
             <Link
               href="/layouts"
-              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="-my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Layouts
             </Link>
             <Link
               href="/events"
-              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="-my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Events
             </Link>
             <Link
               href="/leagues"
-              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="-my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               League
             </Link>
             <Link
               href="/scoring"
-              className="text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="-my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Scoring
             </Link>
             <Link
               href="/admin"
-              className="ml-auto text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
+              className="ml-auto -my-2 py-2 text-[13px] text-zinc-600 sm:text-sm hover:text-black dark:text-zinc-400 dark:hover:text-white"
             >
               Admin
             </Link>
