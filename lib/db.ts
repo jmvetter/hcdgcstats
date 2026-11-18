@@ -100,6 +100,36 @@ CREATE TABLE IF NOT EXISTS checkins (
   PRIMARY KEY (night_id, player_id)
 );
 
+-- Putting league nights: scorecards of raw putts (JSON), scored with the
+-- versioned rules in lib/putting-config.ts. Once a night is paid out
+-- (paid_out_at is set) its cards can only be changed by an admin.
+CREATE TABLE IF NOT EXISTS putting_nights (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  week INTEGER,
+  name TEXT NOT NULL,
+  scorekeeper TEXT,
+  distances_ft TEXT NOT NULL DEFAULT '[]', -- JSON: feet for each distance, e.g. [10, 20, 30]; null when not given
+  entry_fee INTEGER NOT NULL DEFAULT 0,
+  pool_per_player INTEGER NOT NULL DEFAULT 0, -- of each entry, what goes into the division's pool
+  added_cash TEXT NOT NULL DEFAULT '{}', -- JSON: { "MA1": 20 }
+  settings TEXT NOT NULL, -- JSON PayoutSettings (lib/payout.ts)
+  config_version INTEGER NOT NULL, -- the scoring rules the night is scored with
+  paid_out_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS putting_cards (
+  night_id INTEGER NOT NULL REFERENCES putting_nights(id) ON DELETE CASCADE,
+  player_id TEXT NOT NULL REFERENCES players(id),
+  division TEXT NOT NULL DEFAULT '',
+  paid INTEGER NOT NULL DEFAULT 0,
+  putts TEXT NOT NULL, -- JSON [station][distance][putt] of "make", "miss" or null (not entered)
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (night_id, player_id)
+);
+
 -- Live match play scoring. Cards score their own match hole by hole on the
 -- Scoring tab, using the match's code. Side names are free text: players for
 -- singles, or players or teams for anything else.

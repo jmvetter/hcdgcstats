@@ -24,6 +24,11 @@ export default async function ScoringPage() {
         <p className="text-zinc-600 dark:text-zinc-400">
           Live match play scores. Pick your match to keep score; you&apos;ll need the code from the organizer.
         </p>
+        <p className="text-sm">
+          <Link href="/putting" className="underline">
+            Putting league scorecards →
+          </Link>
+        </p>
       </div>
 
       {events.length === 0 && <p className="text-zinc-500">No matches are set up yet.</p>}

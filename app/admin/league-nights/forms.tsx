@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useState, type ReactNode } from "react";
 import type { CheckIn, CheckInPlayer, LeagueNight, ResultRound } from "@/lib/league-nights";
 import {
   FLATTEN_OPTIONS,
@@ -291,9 +291,32 @@ export function PdgaResultsForm({ nightId, tournamentId }: { nightId: number; to
   );
 }
 
+// What the settings form needs of a night. Putting nights have no ace pot.
+export type SettingsNight = {
+  id: number;
+  name: string;
+  date: string;
+  entryFee: number;
+  poolPerPlayer: number;
+  acePerPlayer?: number;
+  addedCash: Record<string, number>;
+  settings: PayoutSettings;
+};
+
 // Money and payout settings, with a live preview of each division's payout.
-export function SettingsForm({ night, fields }: { night: LeagueNight; fields: { division: string; paid: number }[] }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(saveNightAction, {});
+// Putting nights use it too, with their own action and extra fields.
+export function SettingsForm({
+  night,
+  fields,
+  action: saveAction = saveNightAction,
+  extraFields,
+}: {
+  night: SettingsNight;
+  fields: { division: string; paid: number }[];
+  action?: (prev: FormState, formData: FormData) => Promise<FormState>;
+  extraFields?: ReactNode;
+}) {
+  const [state, action, pending] = useActionState<FormState, FormData>(saveAction, {});
   const [settings, setSettings] = useState<PayoutSettings>(night.settings);
   const [pool, setPool] = useState(String(night.poolPerPlayer));
   const [added, setAdded] = useState<Record<string, string>>(
@@ -317,7 +340,9 @@ export function SettingsForm({ night, fields }: { night: LeagueNight; fields: { 
         </label>
       </div>
 
-      <fieldset className="grid min-w-0 gap-3 sm:grid-cols-3">
+      {extraFields}
+
+      <fieldset className={`grid min-w-0 gap-3 ${night.acePerPlayer === undefined ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
         <legend className="mb-2 text-sm font-medium">Money per player</legend>
         <label className="flex flex-col gap-1 text-sm">
           Entry fee ($)
@@ -334,11 +359,13 @@ export function SettingsForm({ night, fields }: { night: LeagueNight; fields: { 
             className={input}
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
-          To the ace pot ($)
-          <input name="acePerPlayer" inputMode="numeric" defaultValue={night.acePerPlayer} required className={input} />
-          <span className="text-xs text-zinc-500">The rest of the entry is the league fee.</span>
-        </label>
+        {night.acePerPlayer !== undefined && (
+          <label className="flex flex-col gap-1 text-sm">
+            To the ace pot ($)
+            <input name="acePerPlayer" inputMode="numeric" defaultValue={night.acePerPlayer} required className={input} />
+            <span className="text-xs text-zinc-500">The rest of the entry is the league fee.</span>
+          </label>
+        )}
       </fieldset>
 
       <fieldset className="grid min-w-0 gap-3 sm:grid-cols-3">

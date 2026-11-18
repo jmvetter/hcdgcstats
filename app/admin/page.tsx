@@ -59,6 +59,18 @@ export default async function AdminPage() {
       </Section>
 
       <Section
+        title="Putting league"
+        description="Start a putting night, mark who's paid, get each division's payout, and lock the night once it's paid out. Anyone can score the night's cards at /putting until then."
+      >
+        <Link
+          href="/admin/putting"
+          className="self-start rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          Open putting nights →
+        </Link>
+      </Section>
+
+      <Section
         title="Match play scoring"
         description="Set up match play matches and hand each card a code so they can score their match hole by hole on the Scoring tab. Team matchups add up into a team score."
       >
