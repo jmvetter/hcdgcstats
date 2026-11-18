@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS putting_nights (
   name TEXT NOT NULL,
   scorekeeper TEXT,
   distances_ft TEXT NOT NULL DEFAULT '[]', -- JSON: feet for each distance, e.g. [10, 20, 30]; null when not given
+  stations TEXT NOT NULL DEFAULT '[]', -- JSON: the night's station names, e.g. ["Inside circle", "Outside circle", "Elevated", "Obstructed"]
   entry_fee INTEGER NOT NULL DEFAULT 0,
   pool_per_player INTEGER NOT NULL DEFAULT 0, -- of each entry, what goes into the division's pool
   added_cash TEXT NOT NULL DEFAULT '{}', -- JSON: { "MA1": 20 }
@@ -124,7 +125,8 @@ CREATE TABLE IF NOT EXISTS putting_cards (
   player_id TEXT NOT NULL REFERENCES players(id),
   division TEXT NOT NULL DEFAULT '',
   paid INTEGER NOT NULL DEFAULT 0,
-  putts TEXT NOT NULL, -- JSON [station][distance][putt] of "make", "miss" or null (not entered)
+  putts TEXT NOT NULL, -- JSON [row][distance][putt] of "make", "miss" or null (not entered); rows are in the order this player played the stations
+  station_order TEXT NOT NULL DEFAULT '[]', -- JSON: which of the night's stations each row was, e.g. [2, 3, 0, 1] for a card that started on the 3rd
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (night_id, player_id)
@@ -205,6 +207,15 @@ function migrate(db: DatabaseSync) {
   if (!layoutCols.includes("source_name")) {
     db.exec("ALTER TABLE layouts ADD COLUMN source_name TEXT");
     db.exec("UPDATE layouts SET source_name = name");
+  }
+  // Putting nights name their stations, and cards record which station each row was.
+  const nightCols = (db.prepare("PRAGMA table_info(putting_nights)").all() as { name: string }[]).map((c) => c.name);
+  if (!nightCols.includes("stations")) {
+    addColumn(db, "ALTER TABLE putting_nights ADD COLUMN stations TEXT NOT NULL DEFAULT '[]'");
+  }
+  const cardCols = (db.prepare("PRAGMA table_info(putting_cards)").all() as { name: string }[]).map((c) => c.name);
+  if (!cardCols.includes("station_order")) {
+    addColumn(db, "ALTER TABLE putting_cards ADD COLUMN station_order TEXT NOT NULL DEFAULT '[]'");
   }
   const matchCols = (db.prepare("PRAGMA table_info(mp_matches)").all() as { name: string }[]).map((c) => c.name);
   // Matches set up before rounds existed count as round 1.

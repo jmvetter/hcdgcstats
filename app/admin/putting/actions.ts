@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { parsePayoutSettings } from "@/lib/payout";
 import { getPuttingConfig } from "@/lib/putting-config";
+import { stationNames } from "@/lib/putting-score";
 import {
   addPuttingCard,
   createPuttingNight,
@@ -26,6 +27,19 @@ const wholeNumber = (formData: FormData, key: string) => {
   return /^\d+$/.test(s) ? Number(s) : null;
 };
 
+// The night's station names from the form's station:0, station:1, ... fields.
+// Every station needs a name, so the card can say which one a player is on.
+function stationsFrom(formData: FormData, config = getPuttingConfig()): { stations: string[] } | { error: string } {
+  const stations = stationNames(
+    Array.from({ length: config.stations }, (_, i) => text(formData, `station:${i}`).replace(/\s+/g, " ").slice(0, 40)),
+    config,
+  );
+  if (stations.some((s) => !s)) return { error: "Name every station (inside circle, outside circle, and so on)." };
+  const lower = stations.map((s) => s.toLowerCase());
+  if (new Set(lower).size !== lower.length) return { error: "Each station needs its own name, so they can be told apart." };
+  return { stations };
+}
+
 function nightFrom(formData: FormData) {
   const night = getPuttingNight(Number(formData.get("nightId")));
   if (!night) throw new Error("That putting night no longer exists.");
@@ -46,7 +60,9 @@ export async function createPuttingNightAction(_prev: FormState, formData: FormD
   const date = text(formData, "date");
   const name = text(formData, "name") || "Putting league";
   if (!isDate(date)) return { error: "Pick the night's date." };
-  const id = createPuttingNight({ date, name });
+  const named = stationsFrom(formData);
+  if ("error" in named) return named;
+  const id = createPuttingNight({ date, name, stations: named.stations });
   refresh();
   redirect(`${BASE}/${id}`);
 }
@@ -61,6 +77,8 @@ export async function savePuttingNightAction(_prev: FormState, formData: FormDat
   const poolPerPlayer = wholeNumber(formData, "poolPerPlayer");
   if (!isDate(date)) return { error: "Pick the night's date." };
   if (!name) return { error: "Give the night a name." };
+  const named = stationsFrom(formData, config);
+  if ("error" in named) return named;
   if (entryFee === null || poolPerPlayer === null) return { error: "Entry fee and payout amounts should be whole dollars." };
   if (poolPerPlayer > entryFee) return { error: "The payout amount is more than the entry fee." };
   const percentPaid = Number(text(formData, "percentPaid"));
@@ -102,6 +120,7 @@ export async function savePuttingNightAction(_prev: FormState, formData: FormDat
     name,
     scorekeeper: text(formData, "scorekeeper") || null,
     distancesFt,
+    stations: named.stations,
     entryFee,
     poolPerPlayer,
     addedCash,

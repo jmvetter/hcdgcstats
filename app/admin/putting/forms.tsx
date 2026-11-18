@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import type { PuttingCard, PuttingNight } from "@/lib/putting";
-import type { PuttingConfig } from "@/lib/putting-config";
+import { STATION_SUGGESTIONS, type PuttingConfig } from "@/lib/putting-config";
 import { SettingsForm } from "../league-nights/forms";
 import type { FormState } from "../league-nights/actions";
 import {
@@ -37,11 +37,41 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function NewPuttingNightForm() {
-  const [state, action, pending] = useActionState<FormState, FormData>(createPuttingNightAction, {});
+// The night's stations: a name for each, with the usual types to pick from.
+// Players start on different stations and say which is which on their cards.
+function StationFields({ names, listId }: { names: string[]; listId: string }) {
   return (
-    <form action={action} className="flex flex-col gap-3">
-      <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
+    <fieldset className="grid min-w-0 gap-3 sm:grid-cols-4">
+      <legend className="mb-2 text-sm font-medium">Stations for the night</legend>
+      {names.map((name, i) => (
+        <label key={i} className="flex flex-col gap-1 text-sm">
+          Station {i + 1}
+          <input
+            name={`station:${i}`}
+            list={listId}
+            defaultValue={name}
+            required
+            autoComplete="off"
+            placeholder={STATION_SUGGESTIONS[i] ?? "Station type"}
+            className={input}
+          />
+        </label>
+      ))}
+      <datalist id={listId}>
+        {STATION_SUGGESTIONS.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+    </fieldset>
+  );
+}
+
+export function NewPuttingNightForm({ stations }: { stations: string[] }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(createPuttingNightAction, {});
+  const listId = useId();
+  return (
+    <form action={action} className="flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-end">
         <label className="flex flex-col gap-1 text-sm">
           Date
           <input type="date" name="date" defaultValue={today()} required className={input} />
@@ -50,10 +80,11 @@ export function NewPuttingNightForm() {
           Name
           <input name="name" placeholder="Putting league, week 3" className={input} />
         </label>
-        <button disabled={pending} className={button}>
-          {pending ? "Creating…" : "Start a putting night"}
-        </button>
       </div>
+      <StationFields names={stations} listId={listId} />
+      <button disabled={pending} className={`${button} self-start`}>
+        {pending ? "Creating…" : "Start a putting night"}
+      </button>
       <Status state={state} />
     </form>
   );
@@ -69,6 +100,7 @@ export function PuttingSettings({
   config: PuttingConfig;
   fields: { division: string; paid: number }[];
 }) {
+  const listId = useId();
   return (
     <SettingsForm
       night={night}
@@ -76,6 +108,7 @@ export function PuttingSettings({
       action={savePuttingNightAction}
       extraFields={
         <>
+          <StationFields names={night.stations} listId={listId} />
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               Week

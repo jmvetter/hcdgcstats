@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { listPuttingNights } from "@/lib/putting";
+import { listPuttingNights, suggestedStations } from "@/lib/putting";
 import { NewPuttingNightForm } from "./forms";
 
 export const metadata: Metadata = {
@@ -35,8 +35,9 @@ export default async function PuttingNightsPage() {
 
       <section className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-lg font-semibold">New putting night</h2>
-        <NewPuttingNightForm />
+        <NewPuttingNightForm stations={suggestedStations()} />
         <p className="text-xs text-zinc-500">
+          Name the night&apos;s four stations. Players start on different ones and mark which is which on their card.
           A new night starts with the last night&apos;s entry fee, distances and payout settings, and the next week number.
         </p>
       </section>

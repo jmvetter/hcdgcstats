@@ -42,10 +42,17 @@ export default async function PuttingNightPage({ params }: PageProps<"/putting/[
           week: night.week,
           scorekeeper: night.scorekeeper,
           distancesFt: night.distancesFt,
+          stations: night.stations,
           paidOutAt: night.paidOutAt,
         }}
         config={getPuttingConfig(night.configVersion)}
-        cards={cards.map((c) => ({ playerId: c.playerId, name: c.name, division: c.division, putts: c.putts }))}
+        cards={cards.map((c) => ({
+          playerId: c.playerId,
+          name: c.name,
+          division: c.division,
+          putts: c.putts,
+          stationOrder: c.stationOrder,
+        }))}
         players={players}
         divisions={divisions}
         admin={admin}

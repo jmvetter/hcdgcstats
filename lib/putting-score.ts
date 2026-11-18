@@ -111,3 +111,51 @@ export function rankCards<T extends { score: Pick<CardScore, "total"> }>(cards: 
   );
   return finishers.map((f) => ({ card: f.card, place: f.place, tied: f.tied, total: -f.score, payout: f.payout }));
 }
+
+// Stations. A night names its stations (inside circle, outside circle,
+// elevated, ...). Players start on different ones, so each card's rows are in
+// the order that player played them, and the card records which of the night's
+// stations each row was.
+
+// The night's station names, one per station; "" for one not named yet.
+export function stationNames(raw: unknown, config: PuttingConfig = getPuttingConfig()): string[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return Array.from({ length: config.stations }, (_, i) => (typeof list[i] === "string" ? list[i].trim() : ""));
+}
+
+export function stationLabel(names: string[], station: number): string {
+  return names[station] || `Station ${station + 1}`;
+}
+
+export function isStationOrder(raw: unknown, config: PuttingConfig = getPuttingConfig()): raw is number[] {
+  return (
+    Array.isArray(raw) &&
+    raw.length === config.stations &&
+    raw.every((n) => Number.isInteger(n) && n >= 0 && n < config.stations) &&
+    new Set(raw).size === config.stations
+  );
+}
+
+// The stations in the order a card played them, as indexes into the night's
+// stations. A card with no valid order plays them in the night's order.
+export function normalizeOrder(raw: unknown, config: PuttingConfig = getPuttingConfig()): number[] {
+  return isStationOrder(raw, config) ? [...raw] : Array.from({ length: config.stations }, (_, i) => i);
+}
+
+// Starting on a station and carrying on through the others in the night's
+// order, wrapping around: starting on the 3rd of 4 plays 3, 4, 1, 2.
+export function orderFrom(start: number, config: PuttingConfig = getPuttingConfig()): number[] {
+  const first = Number.isInteger(start) && start >= 0 && start < config.stations ? start : 0;
+  return Array.from({ length: config.stations }, (_, i) => (first + i) % config.stations);
+}
+
+// Says which station a row was. A station can only be one row, so the row that
+// had it takes the station this row had (the two swap).
+export function moveStation(order: number[], row: number, station: number): number[] {
+  const out = [...order];
+  const other = out.indexOf(station);
+  if (other === -1 || row < 0 || row >= out.length) return out;
+  out[other] = out[row];
+  out[row] = station;
+  return out;
+}

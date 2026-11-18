@@ -103,7 +103,7 @@ export default async function PuttingNightAdminPage({ params }: PageProps<"/admi
         description="Changes apply to this night only; new nights start from the last night's settings."
       >
         <PuttingSettings
-          key={JSON.stringify([night.name, night.date, night.week, night.scorekeeper, night.distancesFt, night.entryFee, night.poolPerPlayer, night.addedCash, night.settings])}
+          key={JSON.stringify([night.name, night.date, night.week, night.scorekeeper, night.distancesFt, night.stations, night.entryFee, night.poolPerPlayer, night.addedCash, night.settings])}
           night={night}
           config={config}
           fields={payout.divisions.map((d) => ({ division: d.division, paid: d.paid }))}

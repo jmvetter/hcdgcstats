@@ -10,6 +10,7 @@ import {
   removePuttingCard,
   setPutt,
   setPuttingCardDivision,
+  setPuttingCardStationOrder,
   updatePuttingNightHeader,
   type PuttingNight,
 } from "@/lib/putting";
@@ -37,11 +38,17 @@ function refresh(nightId: number) {
 const cleanDivision = (division: string) => division.trim().toUpperCase().replace(/\s+/g, " ").slice(0, 12);
 
 // Starts a blank scorecard for a player who's already in the player list.
-export async function addCardAction(nightId: number, playerId: string, division: string): Promise<PuttingResult> {
+// `startStation` is the night's station they start on; they play the rest in order.
+export async function addCardAction(
+  nightId: number,
+  playerId: string,
+  division: string,
+  startStation: number,
+): Promise<PuttingResult> {
   const found = await editableNight(nightId);
   if ("error" in found) return found;
   try {
-    if (!addPuttingCard(found.night, { playerId }, cleanDivision(division))) {
+    if (!addPuttingCard(found.night, { playerId }, cleanDivision(division), startStation)) {
       return { error: "That player already has a scorecard." };
     }
   } catch (err) {
@@ -65,6 +72,15 @@ export async function setPuttAction(
   const outcome = setPutt(found.night, playerId, { station, distance, putt }, value);
   if (!outcome.error) refresh(nightId);
   return outcome;
+}
+
+// Says which of the night's stations each row of a card was.
+export async function setStationOrderAction(nightId: number, playerId: string, order: number[]): Promise<PuttingResult> {
+  const found = await editableNight(nightId);
+  if ("error" in found) return found;
+  if (!setPuttingCardStationOrder(found.night, playerId, order)) return { error: "That isn't a valid station order." };
+  refresh(nightId);
+  return {};
 }
 
 export async function setCardDivisionAction(nightId: number, playerId: string, division: string): Promise<PuttingResult> {

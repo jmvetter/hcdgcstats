@@ -46,3 +46,8 @@ export const CURRENT_PUTTING_CONFIG_VERSION = 1;
 export function getPuttingConfig(version: number = CURRENT_PUTTING_CONFIG_VERSION): PuttingConfig {
   return PUTTING_CONFIGS[version] ?? PUTTING_CONFIGS[CURRENT_PUTTING_CONFIG_VERSION];
 }
+
+// Station types to suggest when setting up a night. Stations are only labels:
+// every station is scored the same way. Usually two stay the same each week
+// (inside and outside the circle) and the other two change.
+export const STATION_SUGGESTIONS = ["Inside circle", "Outside circle", "Elevated", "Obstructed"];

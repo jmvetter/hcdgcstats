@@ -1,7 +1,20 @@
 import "server-only";
 import { db, slugify, transaction } from "./db";
-import { CURRENT_PUTTING_CONFIG_VERSION, getPuttingConfig } from "./putting-config";
-import { emptyPutts, normalizePutts, rankCards, scoreCard, type CardScore, type Putt, type Putts, type Ranked } from "./putting-score";
+import { CURRENT_PUTTING_CONFIG_VERSION, getPuttingConfig, STATION_SUGGESTIONS } from "./putting-config";
+import {
+  emptyPutts,
+  isStationOrder,
+  normalizeOrder,
+  normalizePutts,
+  orderFrom,
+  rankCards,
+  scoreCard,
+  stationNames,
+  type CardScore,
+  type Putt,
+  type Putts,
+  type Ranked,
+} from "./putting-score";
 import {
   DEFAULT_PAYOUT_SETTINGS,
   parsePayoutSettings,
@@ -22,6 +35,7 @@ export type PuttingNight = {
   name: string;
   scorekeeper: string | null;
   distancesFt: (number | null)[]; // one per distance, null when not given
+  stations: string[]; // the night's station names, "" for one not named yet
   entryFee: number;
   poolPerPlayer: number;
   addedCash: Record<string, number>;
@@ -37,7 +51,8 @@ export type PuttingCard = {
   name: string;
   division: string;
   paid: boolean;
-  putts: Putts;
+  putts: Putts; // rows in the order this player played the stations
+  stationOrder: number[]; // which of the night's stations each row was
   score: CardScore;
 };
 
@@ -48,6 +63,7 @@ type NightRow = {
   name: string;
   scorekeeper: string | null;
   distances_ft: string;
+  stations: string;
   entry_fee: number;
   pool_per_player: number;
   added_cash: string;
@@ -74,6 +90,7 @@ function toNight(r: NightRow): PuttingNight {
     name: r.name,
     scorekeeper: r.scorekeeper,
     distancesFt: config.distances.map((_, i) => (typeof feet[i] === "number" ? (feet[i] as number) : null)),
+    stations: stationNames(parseJson<unknown>(r.stations, []), config),
     entryFee: r.entry_fee,
     poolPerPlayer: r.pool_per_player,
     addedCash: parseJson<Record<string, number>>(r.added_cash, {}),
@@ -100,15 +117,31 @@ export function getPuttingNight(id: number): PuttingNight | undefined {
   return row ? toNight(row) : undefined;
 }
 
+// The stations a new night starts with: the first two are usually the same
+// every week (inside and outside the circle) and the other two change, so
+// those are left to be named.
+export function suggestedStations(): string[] {
+  const config = getPuttingConfig();
+  const last = listPuttingNights()[0];
+  return Array.from({ length: config.stations }, (_, i) =>
+    i < 2 ? last?.stations[i] || STATION_SUGGESTIONS[i] || "" : "",
+  );
+}
+
 // A new night starts with the money and payout settings of the last one (or
 // the defaults), and the week after it.
-export function createPuttingNight(input: { date: string; name: string; scorekeeper?: string | null }): number {
+export function createPuttingNight(input: {
+  date: string;
+  name: string;
+  stations: string[];
+  scorekeeper?: string | null;
+}): number {
   const last = listPuttingNights()[0];
   const result = db
     .prepare(
-      `INSERT INTO putting_nights (date, week, name, scorekeeper, distances_ft, entry_fee, pool_per_player, added_cash,
-                                   settings, config_version, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
+      `INSERT INTO putting_nights (date, week, name, scorekeeper, distances_ft, stations, entry_fee, pool_per_player,
+                                   added_cash, settings, config_version, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
     )
     .run(
       input.date,
@@ -116,6 +149,7 @@ export function createPuttingNight(input: { date: string; name: string; scorekee
       input.name,
       input.scorekeeper ?? null,
       JSON.stringify(last?.distancesFt ?? []),
+      JSON.stringify(input.stations),
       last?.entryFee ?? DEFAULT_PUTTING_MONEY.entryFee,
       last?.poolPerPlayer ?? DEFAULT_PUTTING_MONEY.poolPerPlayer,
       JSON.stringify(last?.settings ?? DEFAULT_PAYOUT_SETTINGS),
@@ -129,18 +163,28 @@ export function updatePuttingNight(
   id: number,
   input: Pick<
     PuttingNight,
-    "date" | "week" | "name" | "scorekeeper" | "distancesFt" | "entryFee" | "poolPerPlayer" | "addedCash" | "settings"
+    | "date"
+    | "week"
+    | "name"
+    | "scorekeeper"
+    | "distancesFt"
+    | "stations"
+    | "entryFee"
+    | "poolPerPlayer"
+    | "addedCash"
+    | "settings"
   >,
 ) {
   db.prepare(
-    `UPDATE putting_nights SET date = ?, week = ?, name = ?, scorekeeper = ?, distances_ft = ?, entry_fee = ?,
-       pool_per_player = ?, added_cash = ?, settings = ? WHERE id = ?`,
+    `UPDATE putting_nights SET date = ?, week = ?, name = ?, scorekeeper = ?, distances_ft = ?, stations = ?,
+       entry_fee = ?, pool_per_player = ?, added_cash = ?, settings = ? WHERE id = ?`,
   ).run(
     input.date,
     input.week,
     input.name,
     input.scorekeeper,
     JSON.stringify(input.distancesFt),
+    JSON.stringify(input.stations),
     input.entryFee,
     input.poolPerPlayer,
     JSON.stringify(input.addedCash),
@@ -180,6 +224,7 @@ type CardRow = {
   division: string;
   paid: number;
   putts: string;
+  station_order: string;
 };
 
 function toCard(r: CardRow, configVersion: number): PuttingCard {
@@ -191,6 +236,7 @@ function toCard(r: CardRow, configVersion: number): PuttingCard {
     division: r.division,
     paid: r.paid === 1,
     putts,
+    stationOrder: normalizeOrder(parseJson<unknown>(r.station_order, []), config),
     score: scoreCard(putts, config),
   };
 }
@@ -198,7 +244,7 @@ function toCard(r: CardRow, configVersion: number): PuttingCard {
 export function listPuttingCards(night: Pick<PuttingNight, "id" | "configVersion">): PuttingCard[] {
   const rows = db
     .prepare(
-      `SELECT c.player_id, p.name, c.division, c.paid, c.putts
+      `SELECT c.player_id, p.name, c.division, c.paid, c.putts, c.station_order
        FROM putting_cards c JOIN players p ON p.id = c.player_id
        WHERE c.night_id = ? ORDER BY c.division, p.name COLLATE NOCASE`,
     )
@@ -225,12 +271,16 @@ function findOrCreatePlayer(name: string, division: string): string {
   return id;
 }
 
-// Starts a blank scorecard for a player. Returns false when they already have one.
+// Starts a blank scorecard for a player who begins on `startStation` (an index
+// into the night's stations) and plays the rest in the night's order. Returns
+// false when they already have one.
 export function addPuttingCard(
   night: Pick<PuttingNight, "id" | "configVersion">,
   input: { playerId: string } | { newName: string },
   division: string,
+  startStation = 0,
 ): boolean {
+  const config = getPuttingConfig(night.configVersion);
   return transaction(() => {
     const playerId = "playerId" in input ? input.playerId : findOrCreatePlayer(input.newName, division);
     if (!db.prepare("SELECT 1 FROM players WHERE id = ? AND team = 0").get(playerId)) {
@@ -239,10 +289,18 @@ export function addPuttingCard(
     const now = new Date().toISOString();
     const result = db
       .prepare(
-        `INSERT OR IGNORE INTO putting_cards (night_id, player_id, division, paid, putts, created_at, updated_at)
-         VALUES (?, ?, ?, 0, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO putting_cards (night_id, player_id, division, paid, putts, station_order, created_at, updated_at)
+         VALUES (?, ?, ?, 0, ?, ?, ?, ?)`,
       )
-      .run(night.id, playerId, division, JSON.stringify(emptyPutts(getPuttingConfig(night.configVersion))), now, now);
+      .run(
+        night.id,
+        playerId,
+        division,
+        JSON.stringify(emptyPutts(config)),
+        JSON.stringify(orderFrom(startStation, config)),
+        now,
+        now,
+      );
     return Number(result.changes) > 0;
   });
 }
@@ -279,6 +337,23 @@ export function setPutt(
     );
     return {};
   });
+}
+
+// Says which of the night's stations each row of a card was. Returns false for
+// an order that doesn't use each station exactly once.
+export function setPuttingCardStationOrder(
+  night: Pick<PuttingNight, "id" | "configVersion">,
+  playerId: string,
+  order: unknown,
+): boolean {
+  if (!isStationOrder(order, getPuttingConfig(night.configVersion))) return false;
+  db.prepare("UPDATE putting_cards SET station_order = ?, updated_at = ? WHERE night_id = ? AND player_id = ?").run(
+    JSON.stringify(order),
+    new Date().toISOString(),
+    night.id,
+    playerId,
+  );
+  return true;
 }
 
 export function setPuttingCardDivision(nightId: number, playerId: string, division: string) {

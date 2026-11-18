@@ -5,11 +5,17 @@ import {
   emptyPutts,
   maxDistanceScore,
   maxRoundScore,
+  isStationOrder,
   maxStationScore,
+  moveStation,
+  normalizeOrder,
   normalizePutts,
+  orderFrom,
   rankCards,
   scoreCard,
   scoreDistance,
+  stationLabel,
+  stationNames,
   type Putt,
   type Putts,
 } from "./putting-score";
@@ -119,5 +125,34 @@ describe("putting scoring", () => {
         ["a", 3, false, 10, 0],
       ],
     );
+  });
+
+  it("reads a night's station names, one per station", () => {
+    assert.deepEqual(stationNames([" Inside circle ", "Outside circle", 5], config), ["Inside circle", "Outside circle", "", ""]);
+    assert.deepEqual(stationNames("nope", config), ["", "", "", ""]);
+    assert.equal(stationLabel(["Inside circle", ""], 0), "Inside circle");
+    assert.equal(stationLabel(["Inside circle", ""], 1), "Station 2");
+  });
+
+  it("plays the stations from the one a card starts on, wrapping around", () => {
+    assert.deepEqual(orderFrom(0, config), [0, 1, 2, 3]);
+    assert.deepEqual(orderFrom(2, config), [2, 3, 0, 1]);
+    assert.deepEqual(orderFrom(9, config), [0, 1, 2, 3]);
+  });
+
+  it("only accepts a station order that uses each station once", () => {
+    assert.equal(isStationOrder([2, 3, 0, 1], config), true);
+    assert.equal(isStationOrder([0, 0, 1, 2], config), false);
+    assert.equal(isStationOrder([0, 1, 2], config), false);
+    assert.equal(isStationOrder([0, 1, 2, 4], config), false);
+    assert.deepEqual(normalizeOrder([0, 0, 1, 2], config), [0, 1, 2, 3]);
+    assert.deepEqual(normalizeOrder([3, 2, 1, 0], config), [3, 2, 1, 0]);
+  });
+
+  it("swaps stations when a row is told it was a station another row had", () => {
+    assert.deepEqual(moveStation([0, 1, 2, 3], 0, 2), [2, 1, 0, 3]);
+    assert.deepEqual(moveStation([2, 3, 0, 1], 1, 1), [2, 1, 0, 3]);
+    assert.deepEqual(moveStation([0, 1, 2, 3], 1, 1), [0, 1, 2, 3]);
+    assert.ok(isStationOrder(moveStation([3, 0, 1, 2], 2, 3), config));
   });
 });

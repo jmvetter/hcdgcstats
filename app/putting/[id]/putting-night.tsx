@@ -9,9 +9,12 @@ import {
   maxDistanceScore,
   maxRoundScore,
   maxStationScore,
+  moveStation,
+  orderFrom,
   rankCards,
   scoreCard,
   scoreDistance,
+  stationLabel,
   totalPutts,
   type Putt,
   type Putts,
@@ -22,6 +25,7 @@ import {
   saveHeaderAction,
   setCardDivisionAction,
   setPuttAction,
+  setStationOrderAction,
   type PuttingResult,
 } from "../actions";
 
@@ -32,14 +36,17 @@ type Night = {
   week: number | null;
   scorekeeper: string | null;
   distancesFt: (number | null)[];
+  stations: string[]; // the night's station names
   paidOutAt: string | null;
 };
-type Card = { playerId: string; name: string; division: string; putts: Putts };
+// putts are in the order this player played the stations; stationOrder says which of the night's stations each row was.
+type Card = { playerId: string; name: string; division: string; putts: Putts; stationOrder: number[] };
 type Change =
   | { type: "none" } // nothing on the cards changes; just saves
   | { type: "putt"; playerId: string; station: number; distance: number; putt: number; value: Putt }
   | { type: "add"; card: Card }
   | { type: "division"; playerId: string; division: string }
+  | { type: "order"; playerId: string; order: number[] }
   | { type: "remove"; playerId: string };
 
 function apply(cards: Card[], change: Change): Card[] {
@@ -65,6 +72,8 @@ function apply(cards: Card[], change: Change): Card[] {
       return [...cards.filter((c) => c.playerId !== change.card.playerId), change.card];
     case "division":
       return cards.map((c) => (c.playerId === change.playerId ? { ...c, division: change.division } : c));
+    case "order":
+      return cards.map((c) => (c.playerId === change.playerId ? { ...c, stationOrder: change.order } : c));
     case "remove":
       return cards.filter((c) => c.playerId !== change.playerId);
   }
@@ -130,6 +139,9 @@ export function PuttingNightScreen({
           {formatDate(night.date)}
           {night.week !== null && ` · Week ${night.week}`}
         </p>
+        <p className="text-sm text-zinc-500">
+          Stations: {night.stations.map((_, i) => stationLabel(night.stations, i)).join(" · ")}
+        </p>
       </div>
 
       {night.paidOutAt && (
@@ -157,12 +169,22 @@ export function PuttingNightScreen({
           nightId={night.id}
           players={players}
           divisions={divisions}
+          stations={night.stations}
           taken={new Set(cards.map((c) => c.playerId))}
-          onAdd={(player, division) => {
+          onAdd={(player, division, startStation) => {
             setOpenId(player.id);
             save(
-              { type: "add", card: { playerId: player.id, name: player.name, division, putts: emptyFor(config) } },
-              () => addCardAction(night.id, player.id, division),
+              {
+                type: "add",
+                card: {
+                  playerId: player.id,
+                  name: player.name,
+                  division,
+                  putts: emptyFor(config),
+                  stationOrder: orderFrom(startStation, config),
+                },
+              },
+              () => addCardAction(night.id, player.id, division, startStation),
             );
           }}
         />
@@ -178,6 +200,7 @@ export function PuttingNightScreen({
               key={c.playerId}
               card={c}
               config={config}
+              stations={night.stations}
               open={openId === c.playerId}
               locked={locked}
               admin={admin}
@@ -185,6 +208,11 @@ export function PuttingNightScreen({
               onPutt={(station, distance, putt, value) =>
                 save({ type: "putt", playerId: c.playerId, station, distance, putt, value }, () =>
                   setPuttAction(night.id, c.playerId, station, distance, putt, value),
+                )
+              }
+              onStationOrder={(order) =>
+                save({ type: "order", playerId: c.playerId, order }, () =>
+                  setStationOrderAction(night.id, c.playerId, order),
                 )
               }
               onDivision={(division) =>
@@ -297,18 +325,21 @@ function AddCard({
   nightId,
   players,
   divisions,
+  stations,
   taken,
   onAdd,
 }: {
   nightId: number;
   players: CheckInPlayer[];
   divisions: string[];
+  stations: string[];
   taken: Set<string>;
-  onAdd: (player: CheckInPlayer, division: string) => void;
+  onAdd: (player: CheckInPlayer, division: string, startStation: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<CheckInPlayer | null>(null);
   const [division, setDivision] = useState("");
+  const [start, setStart] = useState(0);
   const q = query.trim().toLowerCase();
   const matches = q ? players.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8) : [];
 
@@ -344,13 +375,38 @@ function AddCard({
             ))}
           </div>
         )}
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm">Which station are you starting on?</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {stations.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-pressed={start === i}
+                onClick={() => setStart(i)}
+                className={`min-h-11 rounded-lg border px-3 text-sm font-medium ${
+                  start === i
+                    ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                    : "border-zinc-300 dark:border-zinc-700"
+                }`}
+              >
+                {stationLabel(stations, i)}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500">
+            You&apos;ll play the rest in order. If you move in a different order, you can change which station each
+            part of your card is.
+          </p>
+        </fieldset>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => {
-              onAdd(picked, division.trim());
+              onAdd(picked, division.trim(), start);
               setPicked(null);
               setQuery("");
+              setStart(0);
             }}
             className="min-h-11 flex-1 rounded-lg bg-black px-4 font-medium text-white dark:bg-white dark:text-black"
           >
@@ -412,24 +468,30 @@ function AddCard({
 
 type Scored = Card & { score: ReturnType<typeof scoreCard> };
 
+const ordinal = (n: number) => (["1st", "2nd", "3rd"][n - 1] ?? `${n}th`);
+
 function CardView({
   card,
   config,
+  stations,
   open,
   locked,
   admin,
   onToggle,
   onPutt,
+  onStationOrder,
   onDivision,
   onRemove,
 }: {
   card: Scored;
   config: PuttingConfig;
+  stations: string[];
   open: boolean;
   locked: boolean;
   admin: boolean;
   onToggle: () => void;
   onPutt: (station: number, distance: number, putt: number, value: Putt) => void;
+  onStationOrder: (order: number[]) => void;
   onDivision: (division: string) => void;
   onRemove: () => void;
 }) {
@@ -470,9 +532,23 @@ function CardView({
           {config.stations > 0 &&
             score.stations.map((st, s) => (
               <div key={s} className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between">
-                  <h3 className="text-sm font-semibold">Station {s + 1}</h3>
-                  <span className="text-sm tabular-nums">
+                <div className="flex items-end justify-between gap-3">
+                  <label className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs text-zinc-500">
+                    Played {ordinal(s + 1)} · which station was it?
+                    <select
+                      value={card.stationOrder[s]}
+                      disabled={locked}
+                      onChange={(e) => onStationOrder(moveStation(card.stationOrder, s, Number(e.target.value)))}
+                      className={`${field} font-semibold text-zinc-900 dark:text-zinc-100`}
+                    >
+                      {stations.map((_, i) => (
+                        <option key={i} value={i}>
+                          {stationLabel(stations, i)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="pb-2.5 text-sm tabular-nums">
                     <span className="text-zinc-500">station total </span>
                     <span className="font-semibold">{st.total}</span>
                     <span className="text-zinc-500"> / {maxStationScore(config)}</span>
@@ -495,7 +571,7 @@ function CardView({
                         </span>
                       </div>
                       <PuttRow
-                        label={`Station ${s + 1} ${rule.label}`}
+                        label={`${stationLabel(stations, card.stationOrder[s])} ${rule.label}`}
                         row={row}
                         setSize={config.setSize}
                         disabled={locked}
